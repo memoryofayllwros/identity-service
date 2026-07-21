@@ -1,5 +1,6 @@
-"""Identity services (re-export)."""
+from src.infrastructure.dependencies import ensure_default_tenant, ensure_membership
+from src.application.services.auth_application_service import AuthApplicationService
 
-from src.services.auth_service import AuthService, ensure_default_tenant, ensure_membership
+AuthService = AuthApplicationService
 
 __all__ = ["AuthService", "ensure_default_tenant", "ensure_membership"]

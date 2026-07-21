@@ -37,7 +37,13 @@ class IdentityBoundaryTests(unittest.TestCase):
 
     def test_identity_models_include_iam(self) -> None:
         names = {model.__name__ for model in IDENTITY_DOCUMENT_MODELS}
-        for required in ("UserDoc", "TenantDoc", "RoleDoc", "PermissionDoc", "InviteDoc"):
+        for required in (
+            "UserDocument",
+            "TenantDocument",
+            "RoleDocument",
+            "PermissionDocument",
+            "InviteDocument",
+        ):
             self.assertIn(required, names)
 
     def test_identity_models_count(self) -> None:

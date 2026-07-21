@@ -21,6 +21,7 @@ python-multipart = "^0.0.9"
 uuid6 = "^2024.7.10"
 httpx = "^0.28.1"
 cryptography = "^49.0.0"
+redis = { version = "^5.0.0", extras = ["hiredis"] }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.1.1"

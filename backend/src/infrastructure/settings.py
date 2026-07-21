@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     jwt_previous_public_key: str | None = Field(default=None, alias="JWT_PREVIOUS_PUBLIC_KEY")
     domain: str | None = Field(default=None, alias="DOMAIN")
     frontend_public_url: str | None = Field(default=None, alias="FRONTEND_PUBLIC_URL")
+    redis_url: str | None = Field(default=None, alias="REDIS_URL")
+    event_transport: str = Field(default="in_process", alias="EVENT_TRANSPORT")
+    identity_event_stream: str = Field(default="identity:events", alias="IDENTITY_EVENT_STREAM")
 
     model_config = SettingsConfigDict(
         env_file=tuple(path for path in _ENV_FILES if path.is_file()),

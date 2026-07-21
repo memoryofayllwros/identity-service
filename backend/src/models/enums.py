@@ -1,6 +1,3 @@
-from enum import Enum
+from src.domain.enums import UserRole
 
-
-class UserRole(str, Enum):
-    ADMIN = "admin"
-    OPERATIONS = "operations"
+__all__ = ["UserRole"]

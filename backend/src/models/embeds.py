@@ -1,6 +1,3 @@
-from pydantic import BaseModel
+from src.infrastructure.persistence.mongo.embeds import MobileInfo
 
-
-class MobileInfo(BaseModel):
-    country_code: str
-    phone_number: str
+__all__ = ["MobileInfo"]

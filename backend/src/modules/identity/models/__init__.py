@@ -1,7 +1,21 @@
-"""Identity models (re-exported; implementations live under src.models for Phase 1)."""
+from src.infrastructure.persistence.mongo.documents import (
+    IDENTITY_DOCUMENT_MODELS,
+    AuthEventDocument as AuthEventDoc,
+    InviteDocument as InviteDoc,
+    MembershipDocument as MembershipDoc,
+    PermissionDocument as PermissionDoc,
+    RoleDocument as RoleDoc,
+    TenantDocument as TenantDoc,
+    UserDocument as UserDoc,
+)
 
-from src.models.membership_doc import MembershipDoc
-from src.models.tenant_doc import TenantDoc
-from src.models.user_doc import UserDoc
-
-__all__ = ["MembershipDoc", "TenantDoc", "UserDoc"]
+__all__ = [
+    "IDENTITY_DOCUMENT_MODELS",
+    "AuthEventDoc",
+    "InviteDoc",
+    "MembershipDoc",
+    "PermissionDoc",
+    "RoleDoc",
+    "TenantDoc",
+    "UserDoc",
+]

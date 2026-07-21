@@ -7,11 +7,16 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from src.models.auth_event_doc import AuthEventDoc
+from src.domain.entities.auth_event import AuthEvent
+from src.infrastructure.dependencies import (
+    get_auth_event_repository,
+    get_authorization_service,
+    get_tenant_repository,
+)
+from src.infrastructure.persistence.mongo._utils import new_id
 from src.security.dependencies import require_permission
 from src.security.principal import Principal
-from src.services.audit_service import record_auth_event
-from src.shared.permissions import IDENTITY_AUDIT_READ, IDENTITY_TENANT_ADMIN
+from src.shared.permissions import IDENTITY_AUDIT_READ, IDENTITY_TENANT_ADMIN, PLAN_FEATURES
 
 router = APIRouter(tags=["identity-ops"])
 AuditDep = Annotated[
@@ -35,15 +40,10 @@ async def list_auth_events(
     principal: AuditDep,
     limit: int = Query(default=50, ge=1, le=200),
 ) -> list[AuthEventResponse]:
-    events = (
-        await AuthEventDoc.find(AuthEventDoc.tenant_id == principal.tenant_id)
-        .sort([("created_at", -1)])
-        .limit(limit)
-        .to_list()
-    )
+    events = await get_auth_event_repository().list_by_tenant(principal.tenant_id, limit=limit)
     return [
         AuthEventResponse(
-            event_id=e.event_id,
+            event_id=e.id,
             event_type=e.event_type,
             tenant_id=e.tenant_id,
             user_id=e.user_id,
@@ -56,8 +56,6 @@ async def list_auth_events(
 
 
 class BillingWebhookPayload(BaseModel):
-    """Provider-agnostic billing hook (Stripe later)."""
-
     event_type: str
     tenant_id: str | None = None
     plan: str | None = None
@@ -67,27 +65,31 @@ class BillingWebhookPayload(BaseModel):
 
 @router.post("/billing/webhook")
 async def billing_webhook(payload: BillingWebhookPayload) -> dict[str, str]:
-    """Acknowledge billing events; apply plan/status updates when tenant_id present."""
-    from src.models.tenant_doc import TenantDoc
-    from src.services.rbac_service import bump_tenant_perm_ver
-    from src.shared.permissions import PLAN_FEATURES
-
+    authz = get_authorization_service()
     if payload.tenant_id:
-        tenant = await TenantDoc.find_one(TenantDoc.tenant_id == payload.tenant_id)
+        tenant = await get_tenant_repository().find_by_id(payload.tenant_id)
         if tenant is not None:
-            updates: dict[str, Any] = {}
             if payload.plan:
-                updates["plan"] = payload.plan
-                updates["features"] = list(PLAN_FEATURES.get(payload.plan, tenant.features))
+                tenant.plan = payload.plan
+                tenant.features = list(PLAN_FEATURES.get(payload.plan, tenant.features))
             if payload.status:
-                updates["status"] = payload.status
-                updates["is_active"] = payload.status == "active"
-            if updates:
-                await tenant.set(updates)
-                await bump_tenant_perm_ver(tenant.tenant_id)
-    await record_auth_event(
-        "billing.webhook",
-        tenant_id=payload.tenant_id,
-        detail={"event_type": payload.event_type, "plan": payload.plan, "status": payload.status},
+                if payload.status == "active":
+                    tenant.activate(features=list(tenant.features))
+                else:
+                    tenant.status = payload.status
+                    tenant.is_active = payload.status == "active"
+            await get_tenant_repository().save(tenant)
+            await authz.bump_tenant_perm_ver(tenant.id)
+    await get_auth_event_repository().save(
+        AuthEvent.record(
+            event_id=new_id(),
+            event_type="billing.webhook",
+            tenant_id=payload.tenant_id,
+            detail={
+                "event_type": payload.event_type,
+                "plan": payload.plan,
+                "status": payload.status,
+            },
+        )
     )
     return {"status": "accepted"}

@@ -6,7 +6,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from src.models.enums import UserRole
+from datetime import datetime
+
+from src.domain.entities.user import User
+from src.domain.enums import UserRole
+from src.domain.events import UserAddedToTenant
+from src.infrastructure.dependencies import (
+    build_event_publisher,
+    ensure_membership,
+    get_membership_repository,
+    get_user_repository,
+)
+from src.infrastructure.persistence.mongo._utils import new_id
 from src.models.user_doc import UserDoc
 from src.schemas.common import PaginatedResponse
 from src.schemas.reference import UserCreate, UserDirectoryEntry, UserListResponse, UserUpdate
@@ -14,13 +25,10 @@ from src.security.dependencies import require_permission
 from src.security.jwt_keys import build_jwks
 from src.security.principal import Principal
 from src.security.security import hash_password
-from src.services.auth_service import ensure_membership
 from src.services.base import get_identity_or_404
-from src.shared.events import UserAddedToTenant, dispatcher
 from src.shared.permissions import IDENTITY_USER_ADMIN, IDENTITY_USER_READ
 from src.shared.tenant_context import current_tenant_id
 
-# Re-export routers composed in identity_main
 from src.api.auth import router as auth_router
 from src.api.health import router as health_router
 from src.api.identity_ops import router as identity_ops_router
@@ -31,6 +39,35 @@ AdminDep = Annotated[Principal, Depends(require_permission(IDENTITY_USER_ADMIN))
 ReadDep = Annotated[Principal, Depends(require_permission(IDENTITY_USER_READ, IDENTITY_USER_ADMIN))]
 
 
+def _user_list_response(user: User, role: UserRole) -> UserListResponse:
+    phone = None
+    if user.phone:
+        from src.infrastructure.persistence.mongo.embeds import MobileInfo
+
+        phone = MobileInfo(
+            country_code=user.phone.country_code,
+            phone_number=user.phone.phone_number,
+        )
+    return UserListResponse(
+        user_id=user.id,
+        email=user.email,
+        username=user.username,
+        full_name=user.full_name,
+        phone=phone,
+        role=role,
+        is_outsourced=user.is_outsourced,
+        is_active=user.is_active,
+        created_at=user.created_at or datetime.now(),
+    )
+
+
+async def _role_for_user(user_id: str) -> UserRole:
+    membership = await get_membership_repository().find_by_tenant_and_user(
+        current_tenant_id(), user_id
+    )
+    return membership.role if membership else UserRole.OPERATIONS
+
+
 @users_router.get("", response_model=PaginatedResponse[UserListResponse])
 async def list_users(
     _user: AdminDep,
@@ -39,47 +76,54 @@ async def list_users(
 ) -> PaginatedResponse[UserListResponse]:
     limit = min(max(limit, 1), 200)
     skip = max(skip, 0)
-    query = UserDoc.find_all()
-    total = await query.count()
-    items = await query.skip(skip).limit(limit).to_list()
-    return PaginatedResponse(
-        items=[UserListResponse.model_validate(i) for i in items],
-        total=total,
-        skip=skip,
-        limit=limit,
-    )
+    users = await get_user_repository().find_all()
+    total = len(users)
+    page = users[skip : skip + limit]
+    items = []
+    for user in page:
+        role = await _role_for_user(user.id)
+        items.append(_user_list_response(user, role))
+    return PaginatedResponse(items=items, total=total, skip=skip, limit=limit)
 
 
 @users_router.post("", response_model=UserListResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(payload: UserCreate, _user: AdminDep) -> UserListResponse:
-    if await UserDoc.find_one(UserDoc.username == payload.username):
+    if await get_user_repository().find_by_username(payload.username):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists.")
-    if await UserDoc.find_one(UserDoc.email == payload.email):
+    if await get_user_repository().find_by_email(str(payload.email)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists.")
 
-    doc = UserDoc(
+    phone = None
+    if payload.phone:
+        from src.domain.value_objects.phone import Phone
+
+        phone = Phone(
+            country_code=payload.phone.country_code,
+            phone_number=payload.phone.phone_number,
+        )
+    user = User(
+        id=new_id(),
         username=payload.username,
-        email=payload.email,
+        email=str(payload.email),
         full_name=payload.full_name,
-        phone=payload.phone,
+        phone=phone,
         password_hash=hash_password(payload.password),
-        role=payload.role,
         is_outsourced=payload.is_outsourced,
     )
-    await doc.insert()
+    await get_user_repository().save(user)
     await ensure_membership(
         tenant_id=current_tenant_id(),
-        user_id=doc.user_id,
+        user_id=user.id,
         role=payload.role,
     )
-    await dispatcher.publish(
+    await build_event_publisher().publish(
         UserAddedToTenant(
             tenant_id=current_tenant_id(),
-            user_id=doc.user_id,
+            user_id=user.id,
             role=payload.role.value,
         )
     )
-    return UserListResponse.model_validate(doc)
+    return _user_list_response(user, payload.role)
 
 
 @users_router.get("/by-ids", response_model=list[UserDirectoryEntry])
@@ -90,15 +134,22 @@ async def get_users_by_ids(
     requested = [part.strip() for part in ids.split(",") if part.strip()][:50]
     if not requested:
         return []
-    users = await UserDoc.find({"user_id": {"$in": requested}}).to_list()
-    by_id = {u.user_id: u for u in users}
-    return [UserDirectoryEntry.model_validate(by_id[i]) for i in requested if i in by_id]
+    users = await get_user_repository().find_all()
+    by_id = {u.id: u for u in users if u.id in requested}
+    return [
+        UserDirectoryEntry(user_id=u.id, full_name=u.full_name, username=u.username)
+        for user_id in requested
+        if (u := by_id.get(user_id))
+    ]
 
 
 @users_router.get("/{user_id}", response_model=UserListResponse)
 async def get_user(user_id: str, _user: ReadDep) -> UserListResponse:
-    doc = await get_identity_or_404(UserDoc, "user_id", user_id)
-    return UserListResponse.model_validate(doc)
+    user = await get_user_repository().find_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    role = await _role_for_user(user_id)
+    return _user_list_response(user, role)
 
 
 @users_router.patch("/{user_id}", response_model=UserListResponse)
@@ -107,21 +158,40 @@ async def update_user(
     payload: UserUpdate,
     _user: AdminDep,
 ) -> UserListResponse:
-    doc = await get_identity_or_404(UserDoc, "user_id", user_id)
+    user = await get_user_repository().find_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     updates = payload.model_dump(exclude_unset=True)
     if "email" in updates:
-        existing = await UserDoc.find_one(UserDoc.email == updates["email"])
-        if existing and existing.user_id != user_id:
+        existing = await get_user_repository().find_by_email(str(updates["email"]))
+        if existing and existing.id != user_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists.")
-    if updates:
-        await doc.set(updates)
-        if "role" in updates:
-            await ensure_membership(
-                tenant_id=current_tenant_id(),
-                user_id=user_id,
-                role=updates["role"],
-            )
-    return UserListResponse.model_validate(await get_identity_or_404(UserDoc, "user_id", user_id))
+    if "full_name" in updates:
+        user.full_name = updates["full_name"]
+    if "email" in updates:
+        user.email = str(updates["email"])
+    if "phone" in updates and updates["phone"] is not None:
+        from src.domain.value_objects.phone import Phone
+
+        user.phone = Phone(
+            country_code=updates["phone"].country_code,
+            phone_number=updates["phone"].phone_number,
+        )
+    if "is_outsourced" in updates:
+        user.is_outsourced = updates["is_outsourced"]
+    if "is_active" in updates:
+        user.is_active = updates["is_active"]
+    await get_user_repository().save(user)
+    role = await _role_for_user(user_id)
+    if "role" in updates and updates["role"] is not None:
+        await ensure_membership(
+            tenant_id=current_tenant_id(),
+            user_id=user_id,
+            role=updates["role"],
+        )
+        role = updates["role"]
+    refreshed = await get_user_repository().find_by_id(user_id)
+    return _user_list_response(refreshed or user, role)
 
 
 jwks_router = APIRouter(tags=["jwks"])

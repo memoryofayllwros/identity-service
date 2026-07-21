@@ -4,7 +4,7 @@ IAM service for the Pacific equipment tracking tenant runtime.
 
 **Owns:** User, Role, Permission, Invitation, Authentication, Authorization, JWT/JWKS, basic tenant metadata.
 
-**Does NOT own:** Customer, Asset, Booking, Quotation, or any business entity. Legacy Tracking code has been removed from this repository; business domain logic belongs in `pacific-equipment-tracking`.
+**Does NOT own:** Customer, Asset, Booking, Quotation, or any business entity. Business domain logic belongs in `pacific-equipment-tracking`.
 
 ## Run locally
 
@@ -23,7 +23,15 @@ Copy `deployment/.env.example` to `deployment/.env` and set:
 - `TENANT_INSTANCE_ID` — immutable tenant for this deployment
 - `DEPLOYMENT_ID`
 - `SECRET_KEY`, `REFRESH_SECRET_KEY`, JWT PEM keys
+- `EVENT_TRANSPORT` — `in_process` (default) or `redis_streams`
+- `REDIS_URL` — required when using Redis Streams
 
 ## Architecture
 
-This repo uses **Service + Beanie ODM** for IAM entities (no Domain/Repository layer). Core business aggregates (Booking, Kit, Component, etc.) should use Domain + Repository separation in the Tracking service repository per ADR-002.
+Hexagonal Architecture (ADR-003):
+
+- **Domain** — entities, value objects, events, repository ports (`backend/src/domain/`)
+- **Application** — command/query handlers (`backend/src/application/`)
+- **Infrastructure** — Mongo persistence adapters, JWT, Redis Streams (`backend/src/infrastructure/`)
+
+Persistence models: `infrastructure/persistence/mongo/documents/`. See [DATA_SCHEMA.md](docs/architecture/DATA_SCHEMA.md) and [EVENT_CONTRACT.md](docs/architecture/EVENT_CONTRACT.md).

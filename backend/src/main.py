@@ -13,18 +13,24 @@ os.environ.setdefault("SERVICE_NAME", "identity")
 
 from src.api.identity_routers import IDENTITY_ROUTERS, jwks_router
 from src.infrastructure.database import close_database, init_database
+from src.infrastructure.dependencies import (
+    build_event_publisher,
+    ensure_default_tenant,
+    ensure_platform_role_templates,
+    reset_event_publisher,
+)
 from src.infrastructure.settings import get_settings, validate_deployment_tenant
-from src.services.auth_service import ensure_default_tenant
 from src.services.base import format_duplicate_key_error
-from src.services.rbac_service import ensure_platform_role_templates
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     get_settings.cache_clear()
+    reset_event_publisher()
     settings = get_settings()
     validate_deployment_tenant(settings)
     await init_database()
+    build_event_publisher()
     await ensure_platform_role_templates()
     await ensure_default_tenant()
     yield

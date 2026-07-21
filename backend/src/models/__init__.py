@@ -1,22 +1,23 @@
-"""Beanie document models for Pacific Identity Platform."""
+"""Beanie document models — compatibility shims (see infrastructure/persistence/mongo/documents)."""
 
-from src.models.auth_event_doc import AuthEventDoc
-from src.models.invite_doc import InviteDoc
-from src.models.membership_doc import MembershipDoc
-from src.models.permission_doc import PermissionDoc
-from src.models.role_doc import RoleDoc
-from src.models.tenant_doc import TenantDoc
-from src.models.user_doc import UserDoc
+from src.infrastructure.persistence.mongo.documents import (
+    IDENTITY_DOCUMENT_MODELS,
+    AuthEventDocument,
+    InviteDocument,
+    MembershipDocument,
+    PermissionDocument,
+    RoleDocument,
+    TenantDocument,
+    UserDocument,
+)
 
-IDENTITY_DOCUMENT_MODELS = [
-    TenantDoc,
-    MembershipDoc,
-    UserDoc,
-    RoleDoc,
-    PermissionDoc,
-    InviteDoc,
-    AuthEventDoc,
-]
+AuthEventDoc = AuthEventDocument
+InviteDoc = InviteDocument
+MembershipDoc = MembershipDocument
+PermissionDoc = PermissionDocument
+RoleDoc = RoleDocument
+TenantDoc = TenantDocument
+UserDoc = UserDocument
 
 __all__ = [
     "IDENTITY_DOCUMENT_MODELS",

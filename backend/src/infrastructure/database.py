@@ -5,7 +5,7 @@ from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
 from src.infrastructure.settings import get_settings
-from src.models import IDENTITY_DOCUMENT_MODELS
+from src.infrastructure.persistence.mongo.documents import IDENTITY_DOCUMENT_MODELS
 
 _client: Optional[AsyncMongoClient] = None
 

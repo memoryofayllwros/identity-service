@@ -7,7 +7,7 @@ from src.models.user_doc import UserDoc
 from src.security.principal import Principal
 from src.security.security import SecurityError, decode_access_token
 from src.security.security_schemes import bearer_scheme, oauth2_scheme, resolve_bearer_token
-from src.services.rbac_service import permissions_for_membership
+from src.infrastructure.dependencies import get_authorization_service
 from src.shared.constants import DEFAULT_TENANT_ID
 from src.shared.tenant_context import bind_tenant_id
 
@@ -66,7 +66,10 @@ async def _load_principal(token: str) -> Principal:
         MembershipDoc.is_active == True,  # noqa: E712
     )
     if membership is not None:
-        perms = await permissions_for_membership(membership)
+        from src.infrastructure.persistence.mongo.mappers import MembershipMapper
+
+        membership_entity = MembershipMapper.to_domain(membership)
+        perms = await get_authorization_service().permissions_for_membership(membership_entity)
         principal = Principal(
             user_id=principal.user_id,
             tenant_id=principal.tenant_id,

@@ -11,21 +11,18 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("SERVICE_NAME", "identity")
 
 from src.infrastructure.database import close_database, init_database
+from src.infrastructure.dependencies import get_authorization_service
 from src.infrastructure.settings import get_settings
 from src.models.membership_doc import MembershipDoc
 from src.models.tenant_doc import TenantDoc
-from src.services.rbac_service import (
-    ensure_platform_role_templates,
-    ensure_tenant_roles,
-    resolve_role_ids_for_legacy,
-)
 from src.shared.permissions import PLAN_FEATURES
 
 
 async def main() -> None:
     get_settings.cache_clear()
     await init_database()
-    await ensure_platform_role_templates()
+    authz = get_authorization_service()
+    await authz.ensure_platform_role_templates()
 
     tenants = await TenantDoc.find_all().to_list()
     for tenant in tenants:
@@ -38,13 +35,13 @@ async def main() -> None:
             updates["perm_ver"] = 1
         if updates:
             await tenant.set(updates)
-        await ensure_tenant_roles(tenant.tenant_id)
+        await authz.ensure_tenant_roles(tenant.tenant_id)
 
     memberships = await MembershipDoc.find_all().to_list()
     for m in memberships:
         role_ids = list(m.role_ids or [])
         if not role_ids:
-            role_ids = await resolve_role_ids_for_legacy(m.role, m.tenant_id)
+            role_ids = await authz.resolve_role_ids_for_legacy(m.role, m.tenant_id)
         tenant = await TenantDoc.find_one(TenantDoc.tenant_id == m.tenant_id)
         perm_ver = int(tenant.perm_ver or 1) if tenant else 1
         await m.set({"role_ids": role_ids, "perm_ver": perm_ver})
