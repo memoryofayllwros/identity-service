@@ -87,7 +87,7 @@ class TenantMapper:
             features=list(entity.features),
             is_active=entity.is_active,
             perm_ver=entity.perm_ver,
-            created_at=entity.created_at,
+            created_at=entity.created_at or as_hk(),
             suspended_at=entity.suspended_at,
         )
 
@@ -142,7 +142,7 @@ class RoleMapper:
             permissions=list(entity.permissions),
             tenant_id=entity.tenant_id,
             is_system=entity.is_system,
-            created_at=entity.created_at,
+            created_at=entity.created_at or as_hk(),
         )
 
 
@@ -174,7 +174,7 @@ class InviteMapper:
             status=entity.status,
             invited_by_user_id=entity.invited_by_user_id,
             accepted_at=entity.accepted_at,
-            created_at=entity.created_at,
+            created_at=entity.created_at or as_hk(),
         )
 
 
@@ -200,5 +200,5 @@ class AuthEventMapper:
             user_id=entity.user_id,
             actor_user_id=entity.actor_user_id,
             detail=dict(entity.detail),
-            created_at=entity.created_at,
+            created_at=entity.created_at or as_hk(),
         )

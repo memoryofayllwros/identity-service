@@ -8,7 +8,7 @@ from src.domain.entities.user import User
 from src.domain.enums import UserRole
 from src.domain.value_objects.phone import Phone
 from src.infrastructure.persistence.mongo._utils import new_id
-from src.infrastructure.persistence.mongo.mappers import MembershipMapper, UserMapper
+from src.infrastructure.persistence.mongo.mappers import MembershipMapper, RoleMapper, UserMapper
 
 
 class UserMapperTests(unittest.TestCase):
@@ -28,6 +28,20 @@ class UserMapperTests(unittest.TestCase):
         self.assertIsNotNone(restored.phone)
         assert restored.phone is not None
         self.assertEqual(restored.phone.digits(), "85291234567")
+
+
+class RoleMapperTests(unittest.TestCase):
+    def test_to_document_defaults_created_at(self) -> None:
+        from src.domain.entities.role import Role
+
+        role = Role(
+            id=new_id(),
+            code="admin",
+            name="Admin",
+            permissions=["identity.user.admin"],
+        )
+        doc = RoleMapper.to_document(role)
+        self.assertIsNotNone(doc.created_at)
 
 
 class MembershipMapperTests(unittest.TestCase):

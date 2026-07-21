@@ -8,6 +8,7 @@ from src.application.services.membership_service import MembershipService
 from src.domain.entities.tenant import Tenant
 from src.domain.entities.user import User
 from src.domain.entities.membership import Membership
+from src.domain.enums import UserRole
 from src.domain.repositories import AuthEventRepository, TenantRepository, UserRepository
 from src.infrastructure.settings import get_settings
 from src.schemas.auth import (
@@ -54,12 +55,17 @@ class AuthApplicationService:
                 return candidate
         return None
 
-    async def _active_membership(self, user: User) -> tuple[Membership, Tenant]:
+    async def _ensure_default_tenant(self) -> Tenant:
         from src.application.commands.ensure_default_tenant import EnsureDefaultTenantHandler
 
-        tenant = await EnsureDefaultTenantHandler(
-            self.tenant_repo, self.authz, self.membership_service._publisher
+        return await EnsureDefaultTenantHandler(
+            self.tenant_repo,
+            self.authz,
+            self.membership_service.publisher,
         ).execute()
+
+    async def _active_membership(self, user: User) -> tuple[Membership, Tenant]:
+        tenant = await self._ensure_default_tenant()
         membership = await self.membership_service.membership_repo.find_active_by_user(user.id)
         if membership is None:
             membership = await self.membership_service.ensure_membership(
@@ -114,8 +120,6 @@ class AuthApplicationService:
 
     async def register(self, payload: RegisterRequest) -> UserResponse:
         from fastapi import HTTPException, status
-        from src.domain.enums import UserRole
-        from src.application.commands.ensure_default_tenant import EnsureDefaultTenantHandler
         from src.infrastructure.persistence.mongo._utils import new_id
 
         if await self.user_repo.count() > 0:
@@ -128,9 +132,7 @@ class AuthApplicationService:
         if await self.user_repo.find_by_email(str(payload.email)):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists.")
 
-        tenant = await EnsureDefaultTenantHandler(
-            self.tenant_repo, self.authz, self.membership_service._publisher
-        ).execute()
+        tenant = await self._ensure_default_tenant()
         phone = None
         if payload.phone:
             from src.domain.value_objects.phone import Phone
@@ -277,11 +279,7 @@ class AuthApplicationService:
         return await self.me(refreshed or user)
 
     async def list_users(self) -> list[UserResponse]:
-        from src.application.commands.ensure_default_tenant import EnsureDefaultTenantHandler
-
-        tenant = await EnsureDefaultTenantHandler(
-            self.tenant_repo, self.authz, self.membership_service._publisher
-        ).execute()
+        tenant = await self._ensure_default_tenant()
         users = await self.user_repo.find_all()
         results: list[UserResponse] = []
         for user in users:
@@ -312,5 +310,3 @@ class AuthApplicationService:
             AuthEvent.record(event_id=new_id(), event_type=event_type, **kwargs)
         )
 
-
-from src.domain.enums import UserRole  # noqa: E402
