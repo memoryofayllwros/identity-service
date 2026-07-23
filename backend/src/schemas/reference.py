@@ -3,8 +3,8 @@ from typing import Generic, Optional, TypeVar
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from src.models.embeds import MobileInfo
-from src.models.enums import UserRole
+from src.infrastructure.persistence.mongo.embeds import MobileInfo
+from src.domain.enums import UserRole
 
 T = TypeVar("T")
 

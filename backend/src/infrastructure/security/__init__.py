@@ -1,4 +1,4 @@
-from src.security.security import (
+from src.infrastructure.security.security import (
     SecurityError,
     create_access_token,
     create_refresh_token,
@@ -7,7 +7,7 @@ from src.security.security import (
     hash_password,
     verify_password,
 )
-from src.security.security_schemes import (
+from src.infrastructure.security.security_schemes import (
     bearer_scheme,
     oauth2_scheme,
     resolve_bearer_token,

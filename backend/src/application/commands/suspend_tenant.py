@@ -6,11 +6,11 @@ from src.application.dto import TenantResult
 from src.application.services.authorization_service import AuthorizationError, AuthorizationService
 from src.domain.entities.auth_event import AuthEvent
 from src.domain.events import TenantSuspended
-from src.domain.exceptions import TenantAlreadySuspended
+from src.domain.exceptions import Forbidden, TenantAlreadySuspended, TenantNotFound
 from src.domain.repositories import AuthEventRepository, TenantRepository
-from src.infrastructure.messaging.event_publisher import EventPublisher
-from src.infrastructure.persistence.mongo._utils import new_id
-from src.security.principal import Principal
+from src.domain.events.publisher import EventPublisher
+from src.domain.id_generator import IDGenerator
+from src.application.principal import Principal
 from src.shared.permissions import IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
 
 
@@ -28,14 +28,15 @@ class SuspendTenantHandler:
         authz: AuthorizationService,
         auth_events: AuthEventRepository,
         publisher: EventPublisher,
+        id_gen: IDGenerator,
     ) -> None:
         self._tenant_repo = tenant_repo
         self._authz = authz
         self._auth_events = auth_events
         self._publisher = publisher
+        self._id_gen = id_gen
 
     async def execute(self, command: SuspendTenantCommand) -> TenantResult:
-        from fastapi import HTTPException, status
         from src.domain.enums import UserRole
 
         try:
@@ -43,14 +44,14 @@ class SuspendTenantHandler:
                 command.actor, IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
             )
         except AuthorizationError as exc:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+            raise Forbidden(str(exc)) from exc
 
         if command.actor.tenant_id != command.tenant_id and command.actor.role != UserRole.ADMIN:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden.")
+            raise Forbidden()
 
         tenant = await self._tenant_repo.find_by_id(command.tenant_id)
         if tenant is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found.")
+            raise TenantNotFound()
 
         try:
             tenant.suspend()
@@ -61,7 +62,7 @@ class SuspendTenantHandler:
         await self._authz.bump_tenant_perm_ver(tenant.id)
         await self._auth_events.save(
             AuthEvent.record(
-                event_id=new_id(),
+                event_id=self._id_gen(),
                 event_type="tenant.suspended",
                 tenant_id=tenant.id,
                 actor_user_id=command.actor.user_id,
@@ -87,15 +88,15 @@ class ActivateTenantHandler:
         authz: AuthorizationService,
         auth_events: AuthEventRepository,
         publisher: EventPublisher,
+        id_gen: IDGenerator,
     ) -> None:
         self._tenant_repo = tenant_repo
         self._authz = authz
         self._auth_events = auth_events
         self._publisher = publisher
+        self._id_gen = id_gen
 
     async def execute(self, command: ActivateTenantCommand) -> TenantResult:
-        from fastapi import HTTPException, status
-
         from src.shared.permissions import PLAN_FEATURES
 
         try:
@@ -103,11 +104,11 @@ class ActivateTenantHandler:
                 command.actor, IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
             )
         except AuthorizationError as exc:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+            raise Forbidden(str(exc)) from exc
 
         tenant = await self._tenant_repo.find_by_id(command.tenant_id)
         if tenant is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found.")
+            raise TenantNotFound()
 
         features = list(tenant.features) or list(PLAN_FEATURES.get(tenant.plan, []))
         tenant.activate(features=features)
@@ -115,7 +116,7 @@ class ActivateTenantHandler:
         await self._authz.bump_tenant_perm_ver(tenant.id)
         await self._auth_events.save(
             AuthEvent.record(
-                event_id=new_id(),
+                event_id=self._id_gen(),
                 event_type="tenant.activated",
                 tenant_id=tenant.id,
                 actor_user_id=command.actor.user_id,

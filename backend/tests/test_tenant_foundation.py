@@ -4,7 +4,7 @@ import unittest
 
 from jose import jwt
 
-from src.security.security import create_access_token
+from src.infrastructure.security.security import create_access_token
 from src.shared.constants import DEFAULT_TENANT_ID
 from src.shared.events import UserInvited, dispatcher
 from src.shared.tenant_context import bind_tenant_id, current_tenant_id

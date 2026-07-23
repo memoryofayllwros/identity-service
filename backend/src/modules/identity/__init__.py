@@ -1,3 +1,3 @@
-from src.modules.identity import api, models, schemas, security, services
+# Identity module — api/tenants.py is the live router; other sub-packages removed.
 
-__all__ = ["api", "models", "schemas", "security", "services"]
+__all__: list[str] = []

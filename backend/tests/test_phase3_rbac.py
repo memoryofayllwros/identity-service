@@ -6,9 +6,9 @@ import unittest
 
 from jose import jwt
 
-from src.models.enums import UserRole
-from src.security.principal import Principal
-from src.security.security import JWT_CLAIM_VERSION, create_access_token
+from src.domain.enums import UserRole
+from src.application.principal import Principal
+from src.infrastructure.security.security import JWT_CLAIM_VERSION, create_access_token
 from src.shared.permissions import (
     ADMIN_PERMISSIONS,
     IDENTITY_USER_READ,
@@ -57,7 +57,7 @@ class PermissionPrincipalTests(unittest.TestCase):
 
 class RequirePermissionTests(unittest.IsolatedAsyncioTestCase):
     async def test_require_permission_allows_matching_code(self) -> None:
-        from src.security.dependencies import require_permission
+        from src.infrastructure.security.dependencies import require_permission
 
         guard = require_permission(TRACKING_BOOKING_WRITE)
         principal = Principal(
@@ -73,7 +73,7 @@ class RequirePermissionTests(unittest.IsolatedAsyncioTestCase):
     async def test_require_permission_denies_missing(self) -> None:
         from fastapi import HTTPException
 
-        from src.security.dependencies import require_permission
+        from src.infrastructure.security.dependencies import require_permission
 
         guard = require_permission(TRACKING_BOOKING_WRITE)
         principal = Principal(
@@ -90,14 +90,14 @@ class RequirePermissionTests(unittest.IsolatedAsyncioTestCase):
 
 class RateLimitTests(unittest.TestCase):
     def setUp(self) -> None:
-        from src.security.rate_limit import clear_rate_limits
+        from src.infrastructure.security.rate_limit import clear_rate_limits
 
         clear_rate_limits()
 
     def test_rate_limit_trips_after_max_hits(self) -> None:
         from fastapi import HTTPException, Request
 
-        from src.security.rate_limit import enforce_rate_limit
+        from src.infrastructure.security.rate_limit import enforce_rate_limit
 
         scope = {
             "type": "http",

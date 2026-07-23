@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from src.application.commands.accept_invite import AcceptInviteCommand
 from src.application.commands.invite_user import InviteUserCommand
 from src.application.commands.suspend_tenant import ActivateTenantCommand, SuspendTenantCommand
-from src.domain.enums import UserRole
+from src.domain.enums import TenantStatus, UserRole
 from src.infrastructure.dependencies import (
     ensure_default_tenant,
     get_accept_invite_handler,
@@ -21,10 +21,8 @@ from src.infrastructure.dependencies import (
     get_suspend_tenant_handler,
     get_tenant_repository,
 )
-from src.models.tenant_doc import TenantDoc
-from src.security.dependencies import get_current_principal, require_permission, require_roles
-from src.security.principal import Principal
-from src.services.base import get_identity_or_404
+from src.infrastructure.security.dependencies import get_current_principal, require_permission, require_roles
+from src.infrastructure.security.principal import Principal
 from src.shared.permissions import (
     IDENTITY_INVITE_MANAGE,
     IDENTITY_TENANT_ADMIN,
@@ -110,7 +108,7 @@ def _invite_response(invite) -> InviteResponse:
     return InviteResponse(
         invite_id=invite.id,
         tenant_id=invite.tenant_id,
-        email=invite.email,
+        email=str(invite.email),
         role_code=invite.role_code,
         token=invite.token,
         status=invite.status,
@@ -140,7 +138,7 @@ async def get_my_entitlements(
         plan=tenant.plan,
         status=tenant.status,
         features=features,
-        is_active=tenant.is_active and tenant.status == "active",
+        is_active=tenant.is_active and tenant.status == TenantStatus.ACTIVE,
     )
 
 
@@ -196,8 +194,7 @@ async def activate_tenant(tenant_id: str, principal: TenantAdminDep) -> TenantRe
 
 @router.get("/{tenant_id}", response_model=TenantResponse)
 async def get_tenant(tenant_id: str, _user: AdminDep) -> TenantResponse:
-    doc = await get_identity_or_404(TenantDoc, "tenant_id", tenant_id)
-    tenant = await get_tenant_repository().find_by_id(doc.tenant_id)
+    tenant = await get_tenant_repository().find_by_id(tenant_id)
     if tenant is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found.")
     return _tenant_response(tenant)

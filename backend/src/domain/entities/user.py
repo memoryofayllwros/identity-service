@@ -4,15 +4,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from src.domain.utils import now_hk
+from src.domain.entities._base import AggregateRoot
+from src.domain.value_objects.email import Email
 from src.domain.value_objects.phone import Phone
 
 
 @dataclass
-class User:
+class User(AggregateRoot):
     id: str
     username: str
-    email: str
+    email: Email
     full_name: str
     password_hash: str
     phone: Optional[Phone] = None
@@ -32,7 +33,7 @@ class User:
     def update_profile(
         self,
         *,
-        email: str | None = None,
+        email: Email | None = None,
         full_name: str | None = None,
         phone: Phone | None = None,
     ) -> None:

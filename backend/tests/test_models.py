@@ -1,6 +1,6 @@
 import unittest
 
-from src.models import IDENTITY_DOCUMENT_MODELS
+from src.infrastructure.persistence.mongo.documents import IDENTITY_DOCUMENT_MODELS
 
 
 class ModelRegistryTests(unittest.TestCase):

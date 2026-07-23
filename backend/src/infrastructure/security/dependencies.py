@@ -1,13 +1,15 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, SecurityScopes
 
-from src.models.enums import UserRole
-from src.models.membership_doc import MembershipDoc
-from src.models.user_doc import UserDoc
-from src.security.principal import Principal
-from src.security.security import SecurityError, decode_access_token
-from src.security.security_schemes import bearer_scheme, oauth2_scheme, resolve_bearer_token
-from src.infrastructure.dependencies import get_authorization_service
+from src.domain.enums import UserRole
+from src.infrastructure.dependencies import (
+    get_authorization_service,
+    get_membership_repository,
+    get_user_repository,
+)
+from src.infrastructure.security.principal import Principal
+from src.infrastructure.security.security import SecurityError, decode_access_token
+from src.infrastructure.security.security_schemes import bearer_scheme, oauth2_scheme, resolve_bearer_token
 from src.shared.constants import DEFAULT_TENANT_ID
 from src.shared.tenant_context import bind_tenant_id
 
@@ -54,30 +56,25 @@ async def _load_principal(token: str) -> Principal:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.") from exc
 
     principal = _principal_from_claims(payload, bearer_token=token)
-    user = await UserDoc.find_one(UserDoc.user_id == principal.user_id)
+    user = await get_user_repository().find_by_id(principal.user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User does not exist.")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive.")
 
-    membership = await MembershipDoc.find_one(
-        MembershipDoc.tenant_id == principal.tenant_id,
-        MembershipDoc.user_id == principal.user_id,
-        MembershipDoc.is_active == True,  # noqa: E712
+    membership = await get_membership_repository().find_by_tenant_and_user(
+        principal.tenant_id, principal.user_id
     )
-    if membership is not None:
-        from src.infrastructure.persistence.mongo.mappers import MembershipMapper
-
-        membership_entity = MembershipMapper.to_domain(membership)
-        perms = await get_authorization_service().permissions_for_membership(membership_entity)
+    if membership is not None and membership.is_active:
+        perms = await get_authorization_service().permissions_for_membership(membership)
         principal = Principal(
             user_id=principal.user_id,
             tenant_id=principal.tenant_id,
             role=membership.role,
-            email=user.email,
+            email=user.email.value,
             full_name=user.full_name,
             role_ids=list(membership.role_ids),
-            perm_ver=int(membership.perm_ver or 1),
+            perm_ver=membership.perm_ver,
             scopes=list(perms)[:32],
             permissions=frozenset(perms),
             bearer_token=token,
@@ -88,7 +85,7 @@ async def _load_principal(token: str) -> Principal:
             user_id=principal.user_id,
             tenant_id=principal.tenant_id,
             role=principal.role,
-            email=user.email,
+            email=user.email.value,
             full_name=user.full_name,
             role_ids=principal.role_ids,
             perm_ver=principal.perm_ver,

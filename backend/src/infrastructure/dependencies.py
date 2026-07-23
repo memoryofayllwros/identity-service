@@ -8,15 +8,25 @@ from src.application.commands.accept_invite import AcceptInviteHandler
 from src.application.commands.ensure_default_tenant import EnsureDefaultTenantHandler
 from src.application.commands.invite_user import InviteUserHandler
 from src.application.commands.suspend_tenant import ActivateTenantHandler, SuspendTenantHandler
+from src.application.queries.user_queries import (
+    GetMyPermissionsHandler,
+    GetUserHandler,
+    ListUsersHandler,
+)
+from src.application.config import DeploymentConfig
+from src.application.ports.password_hasher import PasswordHasher
+from src.application.ports.token_service import TokenService
 from src.application.services.auth_application_service import AuthApplicationService
 from src.application.services.authorization_service import AuthorizationService
 from src.application.services.membership_service import MembershipService
+from src.domain.events.publisher import EventPublisher
+from src.domain.id_generator import IDGenerator
 from src.infrastructure.messaging.event_publisher import (
     CompositeEventPublisher,
-    EventPublisher,
     InProcessEventPublisher,
 )
 from src.infrastructure.messaging.redis_streams import RedisStreamsPublisher
+from src.infrastructure.persistence.mongo._utils import new_id as _new_id
 from src.infrastructure.persistence.mongo.repositories import (
     MongoAuthEventRepository,
     MongoInviteRepository,
@@ -58,6 +68,32 @@ def build_event_publisher() -> EventPublisher:
 def reset_event_publisher() -> None:
     global _event_publisher
     _event_publisher = None
+
+
+def get_id_generator() -> IDGenerator:
+    return _new_id
+
+
+def _deployment_config() -> DeploymentConfig:
+    settings = get_settings()
+    return DeploymentConfig(
+        tenant_instance_id=settings.tenant_instance_id,
+        jwt_expire_minutes=settings.jwt_expire_minutes,
+    )
+
+
+@lru_cache
+def get_password_hasher() -> PasswordHasher:
+    from src.infrastructure.security.password_hasher import BcryptPasswordHasher
+
+    return BcryptPasswordHasher()
+
+
+@lru_cache
+def get_token_service() -> TokenService:
+    from src.infrastructure.security.jwt_token_service import JwtTokenService
+
+    return JwtTokenService()
 
 
 @lru_cache
@@ -102,6 +138,7 @@ def get_authorization_service() -> AuthorizationService:
         membership_repo=get_membership_repository(),
         tenant_repo=get_tenant_repository(),
         permission_catalog_repo=get_permission_catalog_repository(),
+        id_gen=get_id_generator(),
     )
 
 
@@ -111,18 +148,25 @@ def get_membership_service() -> MembershipService:
         tenant_repo=get_tenant_repository(),
         authz=get_authorization_service(),
         publisher=build_event_publisher(),
+        id_gen=get_id_generator(),
     )
 
 
 def get_auth_application_service() -> AuthApplicationService:
-    settings = get_settings()
+    cfg = _deployment_config()
     return AuthApplicationService(
         user_repo=get_user_repository(),
         tenant_repo=get_tenant_repository(),
         membership_service=get_membership_service(),
         authz=get_authorization_service(),
         auth_events=get_auth_event_repository(),
-        default_tenant_id=settings.tenant_instance_id,
+        default_tenant_id=cfg.tenant_instance_id,
+        jwt_expire_minutes=cfg.jwt_expire_minutes,
+        id_gen=get_id_generator(),
+        password_hasher=get_password_hasher(),
+        token_service=get_token_service(),
+        get_user_handler=get_get_user_handler(),
+        ensure_default_tenant_handler=get_ensure_default_tenant_handler(),
     )
 
 
@@ -133,6 +177,7 @@ def get_invite_user_handler() -> InviteUserHandler:
         authz=get_authorization_service(),
         auth_events=get_auth_event_repository(),
         publisher=build_event_publisher(),
+        id_gen=get_id_generator(),
     )
 
 
@@ -146,6 +191,8 @@ def get_accept_invite_handler() -> AcceptInviteHandler:
         auth_events=get_auth_event_repository(),
         publisher=build_event_publisher(),
         membership_service=get_membership_service(),
+        id_gen=get_id_generator(),
+        password_hasher=get_password_hasher(),
     )
 
 
@@ -155,6 +202,7 @@ def get_suspend_tenant_handler() -> SuspendTenantHandler:
         authz=get_authorization_service(),
         auth_events=get_auth_event_repository(),
         publisher=build_event_publisher(),
+        id_gen=get_id_generator(),
     )
 
 
@@ -164,14 +212,17 @@ def get_activate_tenant_handler() -> ActivateTenantHandler:
         authz=get_authorization_service(),
         auth_events=get_auth_event_repository(),
         publisher=build_event_publisher(),
+        id_gen=get_id_generator(),
     )
 
 
 def get_ensure_default_tenant_handler() -> EnsureDefaultTenantHandler:
+    cfg = _deployment_config()
     return EnsureDefaultTenantHandler(
         tenant_repo=get_tenant_repository(),
         authz=get_authorization_service(),
         publisher=build_event_publisher(),
+        tenant_instance_id=cfg.tenant_instance_id,
     )
 
 
@@ -186,6 +237,44 @@ def get_register_tenant_handler():
         auth_events=get_auth_event_repository(),
         publisher=build_event_publisher(),
         auth_app=get_auth_application_service(),
+        id_gen=get_id_generator(),
+        password_hasher=get_password_hasher(),
+    )
+
+
+def get_get_user_handler() -> GetUserHandler:
+    cfg = _deployment_config()
+    return GetUserHandler(
+        user_repo=get_user_repository(),
+        membership_repo=get_membership_repository(),
+        tenant_repo=get_tenant_repository(),
+        authz=get_authorization_service(),
+        membership_service=get_membership_service(),
+        tenant_instance_id=cfg.tenant_instance_id,
+    )
+
+
+def get_list_users_handler() -> ListUsersHandler:
+    cfg = _deployment_config()
+    return ListUsersHandler(
+        user_repo=get_user_repository(),
+        membership_repo=get_membership_repository(),
+        tenant_repo=get_tenant_repository(),
+        authz=get_authorization_service(),
+        membership_service=get_membership_service(),
+        tenant_instance_id=cfg.tenant_instance_id,
+    )
+
+
+def get_my_permissions_handler() -> GetMyPermissionsHandler:
+    cfg = _deployment_config()
+    return GetMyPermissionsHandler(
+        user_repo=get_user_repository(),
+        membership_repo=get_membership_repository(),
+        tenant_repo=get_tenant_repository(),
+        authz=get_authorization_service(),
+        membership_service=get_membership_service(),
+        tenant_instance_id=cfg.tenant_instance_id,
     )
 
 

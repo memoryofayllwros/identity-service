@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from src.application.services.authorization_service import AuthorizationService
 from src.domain.entities.tenant import Tenant
+from src.domain.enums import TenantStatus
 from src.domain.events import TenantCreated
 from src.domain.repositories import TenantRepository
-from src.infrastructure.messaging.event_publisher import EventPublisher
-from src.infrastructure.persistence.mongo._utils import new_id
-from src.infrastructure.settings import get_settings
+from src.domain.events.publisher import EventPublisher
 from src.shared.constants import DEFAULT_TENANT_NAME, DEFAULT_TENANT_SLUG
 from src.shared.permissions import PLAN_FEATURES
 
@@ -17,14 +16,15 @@ class EnsureDefaultTenantHandler:
         tenant_repo: TenantRepository,
         authz: AuthorizationService,
         publisher: EventPublisher,
+        tenant_instance_id: str,
     ) -> None:
         self._tenant_repo = tenant_repo
         self._authz = authz
         self._publisher = publisher
+        self._tenant_instance_id = tenant_instance_id
 
     async def execute(self) -> Tenant:
-        settings = get_settings()
-        tenant_id = settings.tenant_instance_id
+        tenant_id = self._tenant_instance_id
         tenant = await self._tenant_repo.find_by_id(tenant_id)
         if tenant is not None:
             if tenant.id != tenant_id:
@@ -40,7 +40,7 @@ class EnsureDefaultTenantHandler:
             name=DEFAULT_TENANT_NAME,
             slug=slug,
             plan="enterprise",
-            status="active",
+            status=TenantStatus.ACTIVE,
             features=features,
             is_active=True,
             perm_ver=1,

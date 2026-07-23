@@ -6,6 +6,7 @@ import unittest
 
 from src.domain.entities.user import User
 from src.domain.enums import UserRole
+from src.domain.value_objects.email import Email
 from src.domain.value_objects.phone import Phone
 from src.infrastructure.persistence.mongo._utils import new_id
 from src.infrastructure.persistence.mongo.mappers import MembershipMapper, RoleMapper, UserMapper
@@ -16,7 +17,7 @@ class UserMapperTests(unittest.TestCase):
         user = User(
             id=new_id(),
             username="alice",
-            email="alice@example.com",
+            email=Email("alice@example.com"),
             full_name="Alice",
             password_hash="hash",
             phone=Phone(country_code="852", phone_number="91234567"),

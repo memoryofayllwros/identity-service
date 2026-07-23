@@ -1,6 +1,6 @@
 # Identity Service — Data Schema
 
-MongoDB document models for the Pacific Identity Platform, defined with [Beanie ODM](https://beanie-odm.dev/) and Pydantic. Persistence implementations live under `backend/src/infrastructure/persistence/mongo/documents/`; `backend/src/models/` provides compatibility shims (`UserDoc`, etc.).
+MongoDB document models for the Pacific Identity Platform, defined with [Beanie ODM](https://beanie-odm.dev/) and Pydantic. Persistence implementations live under `backend/src/infrastructure/persistence/mongo/documents/`.
 
 **Database:** `identity_db` (configurable via `IDENTITY_DATABASE_NAME`)
 
@@ -339,7 +339,6 @@ TenantDoc.perm_ver  ──bump──▶  MembershipDoc.perm_ver  ──mirror─
 |----------|------|
 | Domain entities | `backend/src/domain/entities/` |
 | Persistence documents | `backend/src/infrastructure/persistence/mongo/documents/` |
-| Compatibility shims | `backend/src/models/*_doc.py` |
 | Model registry | `backend/src/infrastructure/persistence/mongo/documents/__init__.py` → `IDENTITY_DOCUMENT_MODELS` |
 | Enums & embeds | `backend/src/domain/enums.py`, `infrastructure/persistence/mongo/embeds.py` |
 | Permission catalog | `backend/src/shared/permissions.py` |

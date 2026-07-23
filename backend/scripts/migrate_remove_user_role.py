@@ -12,7 +12,7 @@ os.environ.setdefault("SERVICE_NAME", "identity")
 
 from src.infrastructure.database import close_database, init_database
 from src.infrastructure.settings import get_settings
-from src.models.user_doc import UserDoc
+from src.infrastructure.persistence.mongo.documents import UserDocument as UserDoc
 
 
 async def main() -> None:

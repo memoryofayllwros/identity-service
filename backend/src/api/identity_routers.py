@@ -18,14 +18,13 @@ from src.infrastructure.dependencies import (
     get_user_repository,
 )
 from src.infrastructure.persistence.mongo._utils import new_id
-from src.models.user_doc import UserDoc
 from src.schemas.common import PaginatedResponse
 from src.schemas.reference import UserCreate, UserDirectoryEntry, UserListResponse, UserUpdate
-from src.security.dependencies import require_permission
-from src.security.jwt_keys import build_jwks
-from src.security.principal import Principal
-from src.security.security import hash_password
-from src.services.base import get_identity_or_404
+from src.domain.value_objects.email import Email
+from src.infrastructure.security.dependencies import require_permission
+from src.infrastructure.security.jwt_keys import build_jwks
+from src.infrastructure.security.principal import Principal
+from src.infrastructure.security.security import hash_password
 from src.shared.permissions import IDENTITY_USER_ADMIN, IDENTITY_USER_READ
 from src.shared.tenant_context import current_tenant_id
 
@@ -50,7 +49,7 @@ def _user_list_response(user: User, role: UserRole) -> UserListResponse:
         )
     return UserListResponse(
         user_id=user.id,
-        email=user.email,
+        email=user.email.value,
         username=user.username,
         full_name=user.full_name,
         phone=phone,
@@ -104,7 +103,7 @@ async def create_user(payload: UserCreate, _user: AdminDep) -> UserListResponse:
     user = User(
         id=new_id(),
         username=payload.username,
-        email=str(payload.email),
+        email=Email(str(payload.email)),
         full_name=payload.full_name,
         phone=phone,
         password_hash=hash_password(payload.password),
@@ -169,7 +168,7 @@ async def update_user(
     if "full_name" in updates:
         user.full_name = updates["full_name"]
     if "email" in updates:
-        user.email = str(updates["email"])
+        user.email = Email(str(updates["email"]))
     if "phone" in updates and updates["phone"] is not None:
         from src.domain.value_objects.phone import Phone
 

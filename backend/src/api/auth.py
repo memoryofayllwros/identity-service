@@ -1,11 +1,17 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 
-from src.infrastructure.dependencies import get_auth_application_service
-from src.models.user_doc import UserDoc
+from src.application.queries.user_queries import GetMyPermissionsQuery, GetUserQuery, ListUsersQuery
+from src.infrastructure.dependencies import (
+    get_auth_application_service,
+    get_get_user_handler,
+    get_list_users_handler,
+    get_my_permissions_handler,
+    get_user_repository,
+)
 from src.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
@@ -16,11 +22,10 @@ from src.schemas.auth import (
     RegisterRequest,
     UserResponse,
 )
-from src.security.dependencies import get_current_principal, require_roles
+from src.infrastructure.security.dependencies import get_current_principal, require_roles
 from src.domain.enums import UserRole
-from src.security.principal import Principal
-from src.security.rate_limit import enforce_rate_limit
-from src.services.base import get_identity_or_404
+from src.infrastructure.security.principal import Principal
+from src.infrastructure.security.rate_limit import enforce_rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 AdminDep = Annotated[Principal, Depends(require_roles(UserRole.ADMIN))]
@@ -98,21 +103,20 @@ async def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordRespo
 
 @router.get("/me", response_model=UserResponse)
 async def me(principal: Principal = Depends(get_current_principal)) -> UserResponse:
-    user_doc = await get_identity_or_404(UserDoc, "user_id", principal.user_id)
-    from src.infrastructure.dependencies import get_user_repository
-    from src.infrastructure.persistence.mongo.mappers import UserMapper
-
-    user = UserMapper.to_domain(user_doc)
-    return await get_auth_application_service().me(user)
+    user = await get_user_repository().find_by_id(principal.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return await get_get_user_handler().execute(GetUserQuery(user_id=principal.user_id, user=user))
 
 
 @router.get("/me/permissions")
 async def me_permissions(principal: Principal = Depends(get_current_principal)) -> dict:
-    user_doc = await get_identity_or_404(UserDoc, "user_id", principal.user_id)
-    from src.infrastructure.persistence.mongo.mappers import UserMapper
-
-    user = UserMapper.to_domain(user_doc)
-    return await get_auth_application_service().my_permissions(user)
+    user = await get_user_repository().find_by_id(principal.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    return await get_my_permissions_handler().execute(
+        GetMyPermissionsQuery(user_id=principal.user_id, user=user)
+    )
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -120,13 +124,12 @@ async def update_me(
     payload: ProfileUpdate,
     principal: Principal = Depends(get_current_principal),
 ) -> UserResponse:
-    user_doc = await get_identity_or_404(UserDoc, "user_id", principal.user_id)
-    from src.infrastructure.persistence.mongo.mappers import UserMapper
-
-    user = UserMapper.to_domain(user_doc)
+    user = await get_user_repository().find_by_id(principal.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
     return await get_auth_application_service().update_profile(user, payload)
 
 
 @router.get("/users", response_model=list[UserResponse])
 async def list_users(_current_user: AdminDep) -> list[UserResponse]:
-    return await get_auth_application_service().list_users()
+    return await get_list_users_handler().execute(ListUsersQuery())

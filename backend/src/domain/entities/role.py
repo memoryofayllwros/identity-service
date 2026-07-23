@@ -4,9 +4,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from src.domain.entities._base import AggregateRoot
+
 
 @dataclass
-class Role:
+class Role(AggregateRoot):
     id: str
     code: str
     name: str

@@ -4,18 +4,19 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, EmailStr, Field
 
-from src.application.dto import LoginResult, user_to_response
+from src.application.dto import LoginResult, UserResponse
 from src.application.services.auth_application_service import AuthApplicationService
 from src.application.services.authorization_service import AuthorizationService
 from src.application.services.membership_service import MembershipService
 from src.domain.entities.tenant import Tenant
-from src.domain.enums import UserRole
+from src.domain.enums import TenantStatus, UserRole
 from src.domain.events import TenantCreated
+from src.domain.exceptions import DuplicateEmail, DuplicateTenantSlug, DuplicateUsername
 from src.domain.repositories import AuthEventRepository, TenantRepository, UserRepository
-from src.infrastructure.messaging.event_publisher import EventPublisher
-from src.infrastructure.persistence.mongo._utils import new_id
-from src.schemas.auth import UserResponse
-from src.security.security import hash_password
+from src.domain.events.publisher import EventPublisher
+from src.domain.id_generator import IDGenerator
+from src.application.ports.password_hasher import PasswordHasher
+from src.domain.value_objects.email import Email
 from src.shared.permissions import PLAN_FEATURES
 
 
@@ -47,27 +48,28 @@ class RegisterTenantHandler:
     auth_events: AuthEventRepository
     publisher: EventPublisher
     auth_app: AuthApplicationService
+    id_gen: IDGenerator
+    password_hasher: PasswordHasher
 
     async def execute(self, payload: TenantRegisterRequest) -> TenantRegisterResponse:
-        from fastapi import HTTPException, status
         from src.domain.entities.user import User
 
         if await self.tenant_repo.find_by_slug(payload.tenant_slug):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant slug already exists.")
+            raise DuplicateTenantSlug()
         if await self.user_repo.find_by_email(str(payload.email)):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already exists.")
+            raise DuplicateEmail()
         if await self.user_repo.find_by_username(payload.username):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists.")
+            raise DuplicateUsername()
 
         await self.authz.ensure_platform_role_templates()
         plan = payload.plan if payload.plan in PLAN_FEATURES else "starter"
         features = list(PLAN_FEATURES.get(plan, PLAN_FEATURES["starter"]))
         tenant = Tenant(
-            id=new_id(),
+            id=self.id_gen(),
             name=payload.tenant_name,
             slug=payload.tenant_slug,
             plan=plan,
-            status="active",
+            status=TenantStatus.ACTIVE,
             features=features,
             is_active=True,
             perm_ver=1,
@@ -76,11 +78,11 @@ class RegisterTenantHandler:
         await self.authz.ensure_tenant_roles(tenant.id)
 
         user = User(
-            id=new_id(),
+            id=self.id_gen(),
             username=payload.username,
-            email=str(payload.email),
+            email=Email(str(payload.email)),
             full_name=payload.full_name,
-            password_hash=hash_password(payload.password),
+            password_hash=self.password_hasher.hash(payload.password),
         )
         await self.user_repo.save(user)
         membership = await self.membership_service.ensure_membership(
@@ -95,14 +97,14 @@ class RegisterTenantHandler:
 
         await self.auth_events.save(
             AuthEvent.record(
-                event_id=new_id(),
+                event_id=self.id_gen(),
                 event_type="tenant.registered",
                 tenant_id=tenant.id,
                 user_id=user.id,
                 detail={"slug": tenant.slug, "plan": plan},
             )
         )
-        login: LoginResult = await self.auth_app._issue_login(user, membership, tenant)
+        login: LoginResult = await self.auth_app.issue_login(user, membership, tenant)
         return TenantRegisterResponse(
             tenant_id=tenant.id,
             slug=tenant.slug,

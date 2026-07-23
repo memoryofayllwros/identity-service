@@ -7,8 +7,8 @@ from src.domain.entities.membership import Membership
 from src.domain.enums import UserRole
 from src.domain.events import RoleChanged, UserAddedToTenant
 from src.domain.repositories import MembershipRepository, TenantRepository
-from src.infrastructure.messaging.event_publisher import EventPublisher
-from src.infrastructure.persistence.mongo._utils import new_id
+from src.domain.events.publisher import EventPublisher
+from src.domain.id_generator import IDGenerator
 
 
 @dataclass
@@ -17,6 +17,15 @@ class MembershipService:
     tenant_repo: TenantRepository
     authz: AuthorizationService
     publisher: EventPublisher
+    id_gen: IDGenerator
+
+    async def find_active_for_user(self, user_id: str) -> Membership | None:
+        return await self.membership_repo.find_active_by_user(user_id)
+
+    async def find_for_tenant_and_user(
+        self, tenant_id: str, user_id: str
+    ) -> Membership | None:
+        return await self.membership_repo.find_by_tenant_and_user(tenant_id, user_id)
 
     async def ensure_membership(
         self,
@@ -50,7 +59,7 @@ class MembershipService:
             return existing
 
         membership = Membership(
-            id=new_id(),
+            id=self.id_gen(),
             tenant_id=tenant_id,
             user_id=user_id,
             role=role,

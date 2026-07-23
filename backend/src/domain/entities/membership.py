@@ -4,11 +4,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
+from src.domain.entities._base import AggregateRoot
 from src.domain.enums import UserRole
 
 
 @dataclass
-class Membership:
+class Membership(AggregateRoot):
     id: str
     tenant_id: str
     user_id: str

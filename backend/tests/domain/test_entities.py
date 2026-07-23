@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from src.domain.entities.invite import Invite
 from src.domain.entities.tenant import Tenant
+from src.domain.enums import TenantStatus
 from src.domain.exceptions import InviteExpired, TenantAlreadySuspended
 from src.domain.utils import now_hk
 from src.domain.value_objects.email import Email
@@ -17,7 +18,7 @@ class TenantEntityTests(unittest.TestCase):
     def test_suspend_changes_status(self) -> None:
         tenant = Tenant(id="t1", name="Acme", slug="acme")
         tenant.suspend()
-        self.assertEqual(tenant.status, "suspended")
+        self.assertEqual(tenant.status, TenantStatus.SUSPENDED)
         self.assertFalse(tenant.is_active)
         self.assertIsNotNone(tenant.suspended_at)
 
@@ -38,7 +39,7 @@ class InviteEntityTests(unittest.TestCase):
         invite = Invite(
             id=new_id(),
             tenant_id="t1",
-            email="a@b.c",
+            email=Email("a@b.c"),
             token="tok",
             expires_at=now_hk() - timedelta(days=1),
         )

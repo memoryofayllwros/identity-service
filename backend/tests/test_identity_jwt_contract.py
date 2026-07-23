@@ -6,8 +6,8 @@ import unittest
 
 from jose import jwt
 
-from src.security.jwt_keys import build_jwks, public_key_pem
-from src.security.security import create_access_token, create_refresh_token, decode_refresh_token
+from src.infrastructure.security.jwt_keys import build_jwks, public_key_pem
+from src.infrastructure.security.security import create_access_token, create_refresh_token, decode_refresh_token
 
 
 class JwtContractTests(unittest.TestCase):

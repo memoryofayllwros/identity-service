@@ -4,7 +4,8 @@ from src.domain.entities.membership import Membership
 from src.domain.entities.role import Role
 from src.domain.entities.tenant import Tenant
 from src.domain.entities.user import User
-from src.domain.enums import UserRole
+from src.domain.enums import InviteStatus, TenantStatus, UserRole
+from src.domain.value_objects.email import Email
 from src.domain.value_objects.phone import Phone
 from src.infrastructure.persistence.mongo.documents import (
     AuthEventDocument,
@@ -30,7 +31,7 @@ class UserMapper:
         return User(
             id=doc.user_id,
             username=doc.username,
-            email=doc.email,
+            email=Email(doc.email),
             full_name=doc.full_name,
             password_hash=doc.password_hash,
             phone=phone,
@@ -50,7 +51,7 @@ class UserMapper:
         return UserDocument(
             user_id=entity.id,
             username=entity.username,
-            email=entity.email,
+            email=entity.email.value,
             full_name=entity.full_name,
             password_hash=entity.password_hash,
             phone=phone,
@@ -68,7 +69,7 @@ class TenantMapper:
             name=doc.name,
             slug=doc.slug,
             plan=doc.plan,
-            status=doc.status,
+            status=TenantStatus(doc.status),
             features=list(doc.features),
             is_active=doc.is_active,
             perm_ver=int(doc.perm_ver or 1),
@@ -152,11 +153,11 @@ class InviteMapper:
         return Invite(
             id=doc.invite_id,
             tenant_id=doc.tenant_id,
-            email=doc.email,
+            email=Email(doc.email),
             token=doc.token,
             expires_at=doc.expires_at,
             role_code=doc.role_code,
-            status=doc.status,
+            status=InviteStatus(doc.status),
             invited_by_user_id=doc.invited_by_user_id,
             accepted_at=doc.accepted_at,
             created_at=doc.created_at,
@@ -167,7 +168,7 @@ class InviteMapper:
         return InviteDocument(
             invite_id=entity.id,
             tenant_id=entity.tenant_id,
-            email=entity.email,
+            email=str(entity.email),
             token=entity.token,
             expires_at=entity.expires_at,
             role_code=entity.role_code,

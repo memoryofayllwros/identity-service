@@ -13,8 +13,8 @@ os.environ.setdefault("SERVICE_NAME", "identity")
 from src.infrastructure.database import close_database, init_database
 from src.infrastructure.dependencies import get_authorization_service
 from src.infrastructure.settings import get_settings
-from src.models.membership_doc import MembershipDoc
-from src.models.tenant_doc import TenantDoc
+from src.infrastructure.persistence.mongo.documents import MembershipDocument as MembershipDoc
+from src.infrastructure.persistence.mongo.documents import TenantDocument as TenantDoc
 from src.shared.permissions import PLAN_FEATURES
 
 

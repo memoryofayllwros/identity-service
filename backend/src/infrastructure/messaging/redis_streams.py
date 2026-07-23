@@ -4,7 +4,7 @@ import json
 import logging
 
 from src.domain.events.base import DomainEvent
-from src.infrastructure.messaging.event_publisher import EventPublisher
+from src.domain.events.publisher import EventPublisher
 
 logger = logging.getLogger(__name__)
 

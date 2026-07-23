@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from src.models.enums import UserRole
+from src.domain.enums import UserRole
 
 
 @dataclass(slots=True)
@@ -17,9 +17,7 @@ class Principal:
     role_ids: list[str] = field(default_factory=list)
     perm_ver: int = 1
     scopes: list[str] = field(default_factory=list)
-    # Resolved permissions (Identity path) or loaded from cache (Tracking)
     permissions: frozenset[str] = field(default_factory=frozenset)
-    # Raw bearer for Identity permission fetch on Tracking
     bearer_token: str | None = None
 
     @property

@@ -1,22 +1,17 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 import logging
 from typing import TypeVar
 
 from src.domain.events.base import DomainEvent
+from src.domain.events.publisher import EventPublisher
 
 logger = logging.getLogger(__name__)
 
 E = TypeVar("E", bound=DomainEvent)
 EventHandler = Callable[[DomainEvent], Awaitable[None]]
-
-
-class EventPublisher(ABC):
-    @abstractmethod
-    async def publish(self, event: DomainEvent) -> None: ...
 
 
 class InProcessEventPublisher(EventPublisher):

@@ -16,7 +16,7 @@ if str(BACKEND_ROOT) not in sys.path:
 from pymongo import AsyncMongoClient
 
 from src.infrastructure.settings import get_settings
-from src.models import IDENTITY_DOCUMENT_MODELS
+from src.infrastructure.persistence.mongo.documents import IDENTITY_DOCUMENT_MODELS
 
 IDENTITY_COLLECTIONS = tuple(model.Settings.name for model in IDENTITY_DOCUMENT_MODELS)
 

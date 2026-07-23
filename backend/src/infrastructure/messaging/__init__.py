@@ -1,6 +1,6 @@
+from src.domain.events.publisher import EventPublisher
 from src.infrastructure.messaging.event_publisher import (
     CompositeEventPublisher,
-    EventPublisher,
     InProcessEventPublisher,
 )
 from src.infrastructure.messaging.redis_streams import RedisStreamsPublisher

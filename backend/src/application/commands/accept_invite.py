@@ -8,7 +8,14 @@ from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.user import User
 from src.domain.enums import UserRole
 from src.domain.events import InviteAccepted, UserRegistered
-from src.domain.exceptions import InviteExpired, InviteNotPending
+from src.domain.exceptions import (
+    DuplicateEmail,
+    DuplicateUsername,
+    InviteExpired,
+    InviteNotFound,
+    InviteNotPending,
+    TenantSuspended,
+)
 from src.domain.repositories import (
     AuthEventRepository,
     InviteRepository,
@@ -16,9 +23,9 @@ from src.domain.repositories import (
     TenantRepository,
     UserRepository,
 )
-from src.infrastructure.messaging.event_publisher import EventPublisher
-from src.infrastructure.persistence.mongo._utils import new_id
-from src.security.security import hash_password
+from src.domain.events.publisher import EventPublisher
+from src.application.ports.password_hasher import PasswordHasher
+from src.domain.id_generator import IDGenerator
 
 
 @dataclass
@@ -40,6 +47,8 @@ class AcceptInviteHandler:
         auth_events: AuthEventRepository,
         publisher: EventPublisher,
         membership_service: object,
+        id_gen: IDGenerator,
+        password_hasher: PasswordHasher,
     ) -> None:
         self._invite_repo = invite_repo
         self._tenant_repo = tenant_repo
@@ -49,37 +58,37 @@ class AcceptInviteHandler:
         self._auth_events = auth_events
         self._publisher = publisher
         self._membership_service = membership_service
+        self._id_gen = id_gen
+        self._password_hasher = password_hasher
 
     async def execute(self, command: AcceptInviteCommand) -> TenantResult:
-        from fastapi import HTTPException, status
-
         invite = await self._invite_repo.find_by_token(command.token)
         if invite is None or not invite.is_pending:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found.")
+            raise InviteNotFound()
         try:
             invite.accept()
         except InviteExpired:
             await self._invite_repo.save(invite)
-            raise HTTPException(status_code=status.HTTP_410_GONE, detail="Invite expired.") from None
+            raise
         except InviteNotPending:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite not found.") from None
+            raise InviteNotFound()
 
         tenant = await self._tenant_repo.find_by_id(invite.tenant_id)
         if tenant is None or tenant.is_suspended:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant is suspended.")
+            raise TenantSuspended()
 
-        if await self._user_repo.find_by_email(invite.email):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
+        if await self._user_repo.find_by_email(str(invite.email)):
+            raise DuplicateEmail("Email already registered.")
         if await self._user_repo.find_by_username(command.username):
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username already exists.")
+            raise DuplicateUsername()
 
         role = UserRole.ADMIN if invite.role_code == "admin" else UserRole.OPERATIONS
         user = User(
-            id=new_id(),
+            id=self._id_gen(),
             username=command.username,
             email=invite.email,
             full_name=command.full_name,
-            password_hash=hash_password(command.password),
+            password_hash=self._password_hasher.hash(command.password),
         )
         await self._user_repo.save(user)
         await self._membership_service.ensure_membership(
@@ -91,7 +100,7 @@ class AcceptInviteHandler:
         await self._authz.bump_tenant_perm_ver(tenant.id)
         await self._auth_events.save(
             AuthEvent.record(
-                event_id=new_id(),
+                event_id=self._id_gen(),
                 event_type="invite.accepted",
                 tenant_id=tenant.id,
                 user_id=user.id,
@@ -102,7 +111,7 @@ class AcceptInviteHandler:
             InviteAccepted(invite_id=invite.id, tenant_id=tenant.id, user_id=user.id)
         )
         await self._publisher.publish(
-            UserRegistered(user_id=user.id, email=user.email, tenant_id=tenant.id)
+            UserRegistered(user_id=user.id, email=user.email.value, tenant_id=tenant.id)
         )
         refreshed = await self._tenant_repo.find_by_id(tenant.id)
         return TenantResult(tenant=refreshed or tenant)

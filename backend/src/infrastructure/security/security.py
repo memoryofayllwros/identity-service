@@ -4,8 +4,8 @@ import bcrypt
 from jose import JWTError, jwt
 
 from src.infrastructure.settings import get_settings
-from src.models._utils import as_hk
-from src.security.jwt_keys import get_signing_keypair, private_key_pem, public_key_pem
+from src.infrastructure.persistence.mongo._utils import as_hk
+from src.infrastructure.security.jwt_keys import get_signing_keypair, private_key_pem, public_key_pem
 
 
 class SecurityError(Exception):

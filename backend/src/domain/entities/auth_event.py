@@ -4,11 +4,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from src.domain.entities._base import AggregateRoot
 from src.domain.utils import now_hk
 
 
 @dataclass
-class AuthEvent:
+class AuthEvent(AggregateRoot):
     id: str
     event_type: str
     tenant_id: Optional[str] = None

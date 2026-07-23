@@ -6,13 +6,14 @@ from src.domain.entities.membership import Membership
 from src.domain.entities.role import Role
 from src.domain.entities.tenant import Tenant
 from src.domain.enums import UserRole
+from src.domain.id_generator import IDGenerator
 from src.domain.repositories import (
     MembershipRepository,
     PermissionCatalogRepository,
     RoleRepository,
     TenantRepository,
 )
-from src.security.principal import Principal
+from src.application.principal import Principal
 from src.shared.permissions import (
     ALL_PERMISSIONS,
     PLATFORM_ROLE_TEMPLATES,
@@ -31,6 +32,7 @@ class AuthorizationService:
     membership_repo: MembershipRepository
     tenant_repo: TenantRepository
     permission_catalog_repo: PermissionCatalogRepository
+    id_gen: IDGenerator
 
     async def ensure_permission_catalog(self) -> None:
         await self.permission_catalog_repo.ensure_catalog(list(ALL_PERMISSIONS))
@@ -42,7 +44,7 @@ class AuthorizationService:
             role = await self.role_repo.find_platform_template(code)
             if role is None:
                 role = Role(
-                    id=_new_role_id(),
+                    id=self.id_gen(),
                     tenant_id=None,
                     code=code,
                     name=code.replace("_", " ").title(),
@@ -63,7 +65,7 @@ class AuthorizationService:
             role = await self.role_repo.find_tenant_role(tenant_id, code)
             if role is None:
                 role = Role(
-                    id=_new_role_id(),
+                    id=self.id_gen(),
                     tenant_id=tenant_id,
                     code=code,
                     name=template.name,
@@ -120,9 +122,3 @@ class AuthorizationService:
         if any(principal.has_permission(code) for code in codes):
             return
         raise AuthorizationError("Forbidden.")
-
-
-def _new_role_id() -> str:
-    from src.infrastructure.persistence.mongo._utils import new_id
-
-    return new_id()

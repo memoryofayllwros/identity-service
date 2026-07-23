@@ -8,14 +8,15 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from src.domain.entities.auth_event import AuthEvent
+from src.domain.enums import TenantStatus
 from src.infrastructure.dependencies import (
     get_auth_event_repository,
     get_authorization_service,
     get_tenant_repository,
 )
 from src.infrastructure.persistence.mongo._utils import new_id
-from src.security.dependencies import require_permission
-from src.security.principal import Principal
+from src.infrastructure.security.dependencies import require_permission
+from src.infrastructure.security.principal import Principal
 from src.shared.permissions import IDENTITY_AUDIT_READ, IDENTITY_TENANT_ADMIN, PLAN_FEATURES
 
 router = APIRouter(tags=["identity-ops"])
@@ -73,11 +74,11 @@ async def billing_webhook(payload: BillingWebhookPayload) -> dict[str, str]:
                 tenant.plan = payload.plan
                 tenant.features = list(PLAN_FEATURES.get(payload.plan, tenant.features))
             if payload.status:
-                if payload.status == "active":
+                if payload.status == TenantStatus.ACTIVE.value:
                     tenant.activate(features=list(tenant.features))
                 else:
-                    tenant.status = payload.status
-                    tenant.is_active = payload.status == "active"
+                    tenant.status = TenantStatus(payload.status)
+                    tenant.is_active = payload.status == TenantStatus.ACTIVE.value
             await get_tenant_repository().save(tenant)
             await authz.bump_tenant_perm_ver(tenant.id)
     await get_auth_event_repository().save(
