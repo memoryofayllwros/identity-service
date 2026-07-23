@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.invite import Invite
 from src.domain.entities.membership import Membership
+from src.domain.entities.outbox_record import OutboxRecord
 from src.domain.entities.role import Role
 from src.domain.entities.tenant import Tenant
 from src.domain.entities.user import User
@@ -10,6 +11,7 @@ from src.domain.repositories import (
     AuthEventRepository,
     InviteRepository,
     MembershipRepository,
+    OutboxRepository,
     PermissionCatalogRepository,
     RoleRepository,
     TenantRepository,
@@ -19,6 +21,7 @@ from src.infrastructure.persistence.mongo.documents import (
     AuthEventDocument,
     InviteDocument,
     MembershipDocument,
+    OutboxDocument,
     PermissionDocument,
     RoleDocument,
     TenantDocument,
@@ -28,10 +31,12 @@ from src.infrastructure.persistence.mongo.mappers import (
     AuthEventMapper,
     InviteMapper,
     MembershipMapper,
+    OutboxMapper,
     RoleMapper,
     TenantMapper,
     UserMapper,
 )
+from src.domain.utils import now_hk
 
 
 class MongoUserRepository(UserRepository):
@@ -260,3 +265,23 @@ class MongoPermissionCatalogRepository(PermissionCatalogRepository):
             if code in existing:
                 continue
             await PermissionDocument(code=code, description=code.replace(".", " ")).insert()
+
+
+class MongoOutboxRepository(OutboxRepository):
+    async def save(self, record: OutboxRecord) -> None:
+        doc = OutboxMapper.to_document(record)
+        await doc.insert()
+
+    async def find_unpublished(self, limit: int = 50) -> list[OutboxRecord]:
+        docs = (
+            await OutboxDocument.find(OutboxDocument.published == False)  # noqa: E712
+            .sort([("created_at", 1)])
+            .limit(limit)
+            .to_list()
+        )
+        return [OutboxMapper.to_domain(doc) for doc in docs]
+
+    async def mark_published(self, record_id: str) -> None:
+        doc = await OutboxDocument.find_one(OutboxDocument.record_id == record_id)
+        if doc:
+            await doc.set({"published": True, "published_at": now_hk()})

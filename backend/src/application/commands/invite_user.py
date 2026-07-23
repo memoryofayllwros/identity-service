@@ -7,10 +7,9 @@ from src.application.services.authorization_service import AuthorizationError, A
 from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.invite import Invite
 from src.domain.exceptions import Forbidden, InvalidRoleCode, TenantNotFound
-from src.domain.events import InviteCreated
-from src.domain.events.publisher import EventPublisher
 from src.domain.id_generator import IDGenerator
 from src.domain.repositories import AuthEventRepository, InviteRepository, TenantRepository
+from src.domain.unit_of_work import UnitOfWork
 from src.application.principal import Principal
 
 
@@ -29,14 +28,14 @@ class InviteUserHandler:
         invite_repo: InviteRepository,
         authz: AuthorizationService,
         auth_events: AuthEventRepository,
-        publisher: EventPublisher,
+        uow: UnitOfWork,
         id_gen: IDGenerator,
     ) -> None:
         self._tenant_repo = tenant_repo
         self._invite_repo = invite_repo
         self._authz = authz
         self._auth_events = auth_events
-        self._publisher = publisher
+        self._uow = uow
         self._id_gen = id_gen
 
     async def execute(self, command: InviteUserCommand) -> InviteResult:
@@ -65,7 +64,11 @@ class InviteUserHandler:
             role_code=command.role_code,
             invited_by_user_id=command.actor.user_id,
         )
-        await self._invite_repo.save(invite)
+
+        async with self._uow:
+            self._uow.register(invite)
+            await self._uow.commit()
+
         await self._auth_events.save(
             AuthEvent.record(
                 event_id=self._id_gen(),
@@ -73,13 +76,6 @@ class InviteUserHandler:
                 tenant_id=command.tenant_id,
                 actor_user_id=command.actor.user_id,
                 detail={"email": str(invite.email), "role_code": invite.role_code},
-            )
-        )
-        await self._publisher.publish(
-            InviteCreated(
-                invite_id=invite.id,
-                tenant_id=invite.tenant_id,
-                email=str(invite.email),
             )
         )
         return InviteResult(invite=invite)

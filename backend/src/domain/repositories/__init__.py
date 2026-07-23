@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.invite import Invite
 from src.domain.entities.membership import Membership
+from src.domain.entities.outbox_record import OutboxRecord
 from src.domain.entities.role import Role
 from src.domain.entities.tenant import Tenant
 from src.domain.entities.user import User
@@ -111,3 +112,14 @@ class AuthEventRepository(ABC):
 class PermissionCatalogRepository(ABC):
     @abstractmethod
     async def ensure_catalog(self, codes: list[str]) -> None: ...
+
+
+class OutboxRepository(ABC):
+    @abstractmethod
+    async def save(self, record: OutboxRecord) -> None: ...
+
+    @abstractmethod
+    async def find_unpublished(self, limit: int = 50) -> list[OutboxRecord]: ...
+
+    @abstractmethod
+    async def mark_published(self, record_id: str) -> None: ...

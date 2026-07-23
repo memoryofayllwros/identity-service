@@ -5,17 +5,17 @@ from dataclasses import dataclass
 from pydantic import BaseModel, EmailStr, Field
 
 from src.application.dto import LoginResult, UserResponse
-from src.application.services.auth_application_service import AuthApplicationService
 from src.application.services.authorization_service import AuthorizationService
 from src.application.services.membership_service import MembershipService
+from src.application.services.token_issuance_service import TokenIssuanceService
+from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.tenant import Tenant
-from src.domain.enums import TenantStatus, UserRole
-from src.domain.events import TenantCreated
+from src.domain.enums import UserRole
 from src.domain.exceptions import DuplicateEmail, DuplicateTenantSlug, DuplicateUsername
 from src.domain.repositories import AuthEventRepository, TenantRepository, UserRepository
-from src.domain.events.publisher import EventPublisher
 from src.domain.id_generator import IDGenerator
 from src.application.ports.password_hasher import PasswordHasher
+from src.domain.unit_of_work import UnitOfWork
 from src.domain.value_objects.email import Email
 from src.shared.permissions import PLAN_FEATURES
 
@@ -46,8 +46,8 @@ class RegisterTenantHandler:
     membership_service: MembershipService
     authz: AuthorizationService
     auth_events: AuthEventRepository
-    publisher: EventPublisher
-    auth_app: AuthApplicationService
+    token_issuance: TokenIssuanceService
+    uow: UnitOfWork
     id_gen: IDGenerator
     password_hasher: PasswordHasher
 
@@ -64,36 +64,35 @@ class RegisterTenantHandler:
         await self.authz.ensure_platform_role_templates()
         plan = payload.plan if payload.plan in PLAN_FEATURES else "starter"
         features = list(PLAN_FEATURES.get(plan, PLAN_FEATURES["starter"]))
-        tenant = Tenant(
-            id=self.id_gen(),
+        tenant = Tenant.create(
+            tenant_id=self.id_gen(),
             name=payload.tenant_name,
             slug=payload.tenant_slug,
             plan=plan,
-            status=TenantStatus.ACTIVE,
             features=features,
-            is_active=True,
             perm_ver=1,
         )
-        await self.tenant_repo.save(tenant)
         await self.authz.ensure_tenant_roles(tenant.id)
 
-        user = User(
-            id=self.id_gen(),
+        user = User.register(
+            user_id=self.id_gen(),
             username=payload.username,
             email=Email(str(payload.email)),
             full_name=payload.full_name,
             password_hash=self.password_hasher.hash(payload.password),
-        )
-        await self.user_repo.save(user)
-        membership = await self.membership_service.ensure_membership(
             tenant_id=tenant.id,
-            user_id=user.id,
-            role=UserRole.ADMIN,
         )
-        await self.publisher.publish(
-            TenantCreated(tenant_id=tenant.id, name=tenant.name, slug=tenant.slug)
-        )
-        from src.domain.entities.auth_event import AuthEvent
+
+        async with self.uow:
+            self.uow.register(tenant)
+            self.uow.register(user)
+            membership = await self.membership_service.ensure_membership(
+                tenant_id=tenant.id,
+                user_id=user.id,
+                role=UserRole.ADMIN,
+                uow=self.uow,
+            )
+            await self.uow.commit()
 
         await self.auth_events.save(
             AuthEvent.record(
@@ -104,7 +103,7 @@ class RegisterTenantHandler:
                 detail={"slug": tenant.slug, "plan": plan},
             )
         )
-        login: LoginResult = await self.auth_app.issue_login(user, membership, tenant)
+        login: LoginResult = await self.token_issuance.issue_login(user, membership, tenant)
         return TenantRegisterResponse(
             tenant_id=tenant.id,
             slug=tenant.slug,

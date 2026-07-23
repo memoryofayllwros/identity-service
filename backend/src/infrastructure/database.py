@@ -40,3 +40,9 @@ async def close_database() -> None:
     if _client is not None:
         await _client.close()
         _client = None
+
+
+def get_motor_client() -> AsyncMongoClient:
+    if _client is None:
+        raise RuntimeError("Database not initialized. Call init_database() first.")
+    return _client

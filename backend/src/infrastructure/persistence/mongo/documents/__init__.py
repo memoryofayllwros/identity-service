@@ -123,6 +123,21 @@ class AuthEventDocument(Document):
         ]
 
 
+class OutboxDocument(Document):
+    record_id: Indexed(str, unique=True)
+    event_type: str
+    payload: dict = Field(default_factory=dict)
+    published: bool = False
+    created_at: HongKongDatetime = Field(default_factory=as_hk)
+    published_at: Optional[HongKongDatetime] = None
+
+    class Settings:
+        name = "outbox"
+        indexes = [
+            [("published", 1), ("created_at", 1)],
+        ]
+
+
 IDENTITY_DOCUMENT_MODELS = [
     TenantDocument,
     MembershipDocument,
@@ -131,4 +146,5 @@ IDENTITY_DOCUMENT_MODELS = [
     PermissionDocument,
     InviteDocument,
     AuthEventDocument,
+    OutboxDocument,
 ]

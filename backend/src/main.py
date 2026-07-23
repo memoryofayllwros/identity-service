@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -38,6 +39,7 @@ from src.infrastructure.dependencies import (
     build_event_publisher,
     ensure_default_tenant,
     ensure_platform_role_templates,
+    get_outbox_relay_worker,
     reset_event_publisher,
 )
 from src.infrastructure.settings import get_settings, validate_deployment_tenant
@@ -54,7 +56,15 @@ async def lifespan(_app: FastAPI):
     build_event_publisher()
     await ensure_platform_role_templates()
     await ensure_default_tenant()
+    relay = get_outbox_relay_worker()
+    relay_task = asyncio.create_task(relay.start())
     yield
+    relay.stop()
+    relay_task.cancel()
+    try:
+        await relay_task
+    except asyncio.CancelledError:
+        pass
     await close_database()
 
 

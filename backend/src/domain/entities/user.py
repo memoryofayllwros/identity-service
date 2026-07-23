@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
 from src.domain.entities._base import AggregateRoot
+from src.domain.events import UserDeactivated, UserRegistered
 from src.domain.value_objects.email import Email
 from src.domain.value_objects.phone import Phone
 
@@ -21,8 +22,40 @@ class User(AggregateRoot):
     is_active: bool = True
     created_at: Optional[datetime] = None
 
+    @classmethod
+    def register(
+        cls,
+        *,
+        user_id: str,
+        username: str,
+        email: Email,
+        full_name: str,
+        password_hash: str,
+        tenant_id: str,
+        phone: Phone | None = None,
+        is_outsourced: bool = False,
+    ) -> User:
+        user = cls(
+            id=user_id,
+            username=username,
+            email=email,
+            full_name=full_name,
+            password_hash=password_hash,
+            phone=phone,
+            is_outsourced=is_outsourced,
+        )
+        user._record(
+            UserRegistered(
+                user_id=user_id,
+                email=email.value,
+                tenant_id=tenant_id,
+            )
+        )
+        return user
+
     def deactivate(self) -> None:
         self.is_active = False
+        self._record(UserDeactivated(user_id=self.id))
 
     def activate(self) -> None:
         self.is_active = True

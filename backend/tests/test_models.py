@@ -5,7 +5,7 @@ from src.infrastructure.persistence.mongo.documents import IDENTITY_DOCUMENT_MOD
 
 class ModelRegistryTests(unittest.TestCase):
     def test_identity_document_models_count(self) -> None:
-        self.assertEqual(len(IDENTITY_DOCUMENT_MODELS), 7)
+        self.assertEqual(len(IDENTITY_DOCUMENT_MODELS), 8)
 
 
 if __name__ == "__main__":

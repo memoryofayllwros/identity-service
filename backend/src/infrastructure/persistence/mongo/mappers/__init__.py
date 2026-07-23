@@ -1,6 +1,7 @@
 from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.invite import Invite
 from src.domain.entities.membership import Membership
+from src.domain.entities.outbox_record import OutboxRecord
 from src.domain.entities.role import Role
 from src.domain.entities.tenant import Tenant
 from src.domain.entities.user import User
@@ -11,6 +12,7 @@ from src.infrastructure.persistence.mongo.documents import (
     AuthEventDocument,
     InviteDocument,
     MembershipDocument,
+    OutboxDocument,
     RoleDocument,
     TenantDocument,
     UserDocument,
@@ -202,4 +204,28 @@ class AuthEventMapper:
             actor_user_id=entity.actor_user_id,
             detail=dict(entity.detail),
             created_at=entity.created_at or as_hk(),
+        )
+
+
+class OutboxMapper:
+    @staticmethod
+    def to_domain(doc: OutboxDocument) -> OutboxRecord:
+        return OutboxRecord(
+            id=doc.record_id,
+            event_type=doc.event_type,
+            payload=dict(doc.payload),
+            published=doc.published,
+            created_at=doc.created_at,
+            published_at=doc.published_at,
+        )
+
+    @staticmethod
+    def to_document(entity: OutboxRecord) -> OutboxDocument:
+        return OutboxDocument(
+            record_id=entity.id,
+            event_type=entity.event_type,
+            payload=dict(entity.payload),
+            published=entity.published,
+            created_at=entity.created_at or as_hk(),
+            published_at=entity.published_at,
         )

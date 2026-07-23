@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from src.application.dto import TenantResult
 from src.application.services.authorization_service import AuthorizationError, AuthorizationService
 from src.domain.entities.auth_event import AuthEvent
-from src.domain.events import TenantSuspended
 from src.domain.exceptions import Forbidden, TenantAlreadySuspended, TenantNotFound
 from src.domain.repositories import AuthEventRepository, TenantRepository
-from src.domain.events.publisher import EventPublisher
 from src.domain.id_generator import IDGenerator
+from src.domain.unit_of_work import UnitOfWork
 from src.application.principal import Principal
 from src.shared.permissions import IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
 
@@ -27,13 +26,13 @@ class SuspendTenantHandler:
         tenant_repo: TenantRepository,
         authz: AuthorizationService,
         auth_events: AuthEventRepository,
-        publisher: EventPublisher,
+        uow: UnitOfWork,
         id_gen: IDGenerator,
     ) -> None:
         self._tenant_repo = tenant_repo
         self._authz = authz
         self._auth_events = auth_events
-        self._publisher = publisher
+        self._uow = uow
         self._id_gen = id_gen
 
     async def execute(self, command: SuspendTenantCommand) -> TenantResult:
@@ -54,11 +53,14 @@ class SuspendTenantHandler:
             raise TenantNotFound()
 
         try:
-            tenant.suspend()
+            tenant.suspend(reason=command.reason)
         except TenantAlreadySuspended:
             pass
 
-        await self._tenant_repo.save(tenant)
+        async with self._uow:
+            self._uow.register(tenant)
+            await self._uow.commit()
+
         await self._authz.bump_tenant_perm_ver(tenant.id)
         await self._auth_events.save(
             AuthEvent.record(
@@ -68,9 +70,6 @@ class SuspendTenantHandler:
                 actor_user_id=command.actor.user_id,
                 detail={"reason": command.reason},
             )
-        )
-        await self._publisher.publish(
-            TenantSuspended(tenant_id=tenant.id, reason=command.reason)
         )
         return TenantResult(tenant=tenant)
 
@@ -87,13 +86,13 @@ class ActivateTenantHandler:
         tenant_repo: TenantRepository,
         authz: AuthorizationService,
         auth_events: AuthEventRepository,
-        publisher: EventPublisher,
+        uow: UnitOfWork,
         id_gen: IDGenerator,
     ) -> None:
         self._tenant_repo = tenant_repo
         self._authz = authz
         self._auth_events = auth_events
-        self._publisher = publisher
+        self._uow = uow
         self._id_gen = id_gen
 
     async def execute(self, command: ActivateTenantCommand) -> TenantResult:
@@ -112,7 +111,11 @@ class ActivateTenantHandler:
 
         features = list(tenant.features) or list(PLAN_FEATURES.get(tenant.plan, []))
         tenant.activate(features=features)
-        await self._tenant_repo.save(tenant)
+
+        async with self._uow:
+            self._uow.register(tenant)
+            await self._uow.commit()
+
         await self._authz.bump_tenant_perm_ver(tenant.id)
         await self._auth_events.save(
             AuthEvent.record(

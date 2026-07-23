@@ -6,6 +6,7 @@ from typing import Optional
 
 from src.domain.entities._base import AggregateRoot
 from src.domain.enums import InviteStatus
+from src.domain.events import InviteAccepted, InviteCreated, InviteRevoked
 from src.domain.exceptions import InviteExpired, InviteNotPending
 from src.domain.utils import now_hk
 from src.domain.value_objects.email import Email
@@ -36,7 +37,7 @@ class Invite(AggregateRoot):
         invited_by_user_id: str | None,
         expires_in_days: int = 7,
     ) -> Invite:
-        return cls(
+        invite = cls(
             id=invite_id,
             tenant_id=tenant_id,
             email=Email(email),
@@ -47,8 +48,16 @@ class Invite(AggregateRoot):
             expires_at=now_hk() + timedelta(days=expires_in_days),
             created_at=now_hk(),
         )
+        invite._record(
+            InviteCreated(
+                invite_id=invite.id,
+                tenant_id=invite.tenant_id,
+                email=str(invite.email),
+            )
+        )
+        return invite
 
-    def accept(self) -> None:
+    def accept(self, *, user_id: str) -> None:
         if self.status != InviteStatus.PENDING:
             raise InviteNotPending()
         if self.is_expired:
@@ -56,9 +65,17 @@ class Invite(AggregateRoot):
             raise InviteExpired()
         self.status = InviteStatus.ACCEPTED
         self.accepted_at = now_hk()
+        self._record(
+            InviteAccepted(
+                invite_id=self.id,
+                tenant_id=self.tenant_id,
+                user_id=user_id,
+            )
+        )
 
     def revoke(self) -> None:
         self.status = InviteStatus.REVOKED
+        self._record(InviteRevoked(invite_id=self.id, tenant_id=self.tenant_id))
 
     def expire(self) -> None:
         self.status = InviteStatus.EXPIRED

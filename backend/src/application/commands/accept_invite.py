@@ -7,7 +7,6 @@ from src.application.services.authorization_service import AuthorizationService
 from src.domain.entities.auth_event import AuthEvent
 from src.domain.entities.user import User
 from src.domain.enums import UserRole
-from src.domain.events import InviteAccepted, UserRegistered
 from src.domain.exceptions import (
     DuplicateEmail,
     DuplicateUsername,
@@ -23,9 +22,9 @@ from src.domain.repositories import (
     TenantRepository,
     UserRepository,
 )
-from src.domain.events.publisher import EventPublisher
 from src.application.ports.password_hasher import PasswordHasher
 from src.domain.id_generator import IDGenerator
+from src.domain.unit_of_work import UnitOfWork
 
 
 @dataclass
@@ -45,8 +44,8 @@ class AcceptInviteHandler:
         membership_repo: MembershipRepository,
         authz: AuthorizationService,
         auth_events: AuthEventRepository,
-        publisher: EventPublisher,
         membership_service: object,
+        uow: UnitOfWork,
         id_gen: IDGenerator,
         password_hasher: PasswordHasher,
     ) -> None:
@@ -56,21 +55,14 @@ class AcceptInviteHandler:
         self._membership_repo = membership_repo
         self._authz = authz
         self._auth_events = auth_events
-        self._publisher = publisher
         self._membership_service = membership_service
+        self._uow = uow
         self._id_gen = id_gen
         self._password_hasher = password_hasher
 
     async def execute(self, command: AcceptInviteCommand) -> TenantResult:
         invite = await self._invite_repo.find_by_token(command.token)
         if invite is None or not invite.is_pending:
-            raise InviteNotFound()
-        try:
-            invite.accept()
-        except InviteExpired:
-            await self._invite_repo.save(invite)
-            raise
-        except InviteNotPending:
             raise InviteNotFound()
 
         tenant = await self._tenant_repo.find_by_id(invite.tenant_id)
@@ -83,20 +75,36 @@ class AcceptInviteHandler:
             raise DuplicateUsername()
 
         role = UserRole.ADMIN if invite.role_code == "admin" else UserRole.OPERATIONS
-        user = User(
-            id=self._id_gen(),
+        user = User.register(
+            user_id=self._id_gen(),
             username=command.username,
             email=invite.email,
             full_name=command.full_name,
             password_hash=self._password_hasher.hash(command.password),
-        )
-        await self._user_repo.save(user)
-        await self._membership_service.ensure_membership(
             tenant_id=tenant.id,
-            user_id=user.id,
-            role=role,
         )
-        await self._invite_repo.save(invite)
+
+        try:
+            invite.accept(user_id=user.id)
+        except InviteExpired:
+            async with self._uow:
+                self._uow.register(invite)
+                await self._uow.commit()
+            raise
+        except InviteNotPending:
+            raise InviteNotFound()
+
+        async with self._uow:
+            self._uow.register(user)
+            self._uow.register(invite)
+            await self._membership_service.ensure_membership(
+                tenant_id=tenant.id,
+                user_id=user.id,
+                role=role,
+                uow=self._uow,
+            )
+            await self._uow.commit()
+
         await self._authz.bump_tenant_perm_ver(tenant.id)
         await self._auth_events.save(
             AuthEvent.record(
@@ -106,12 +114,6 @@ class AcceptInviteHandler:
                 user_id=user.id,
                 detail={"invite_id": invite.id},
             )
-        )
-        await self._publisher.publish(
-            InviteAccepted(invite_id=invite.id, tenant_id=tenant.id, user_id=user.id)
-        )
-        await self._publisher.publish(
-            UserRegistered(user_id=user.id, email=user.email.value, tenant_id=tenant.id)
         )
         refreshed = await self._tenant_repo.find_by_id(tenant.id)
         return TenantResult(tenant=refreshed or tenant)

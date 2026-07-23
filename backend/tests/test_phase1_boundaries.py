@@ -68,7 +68,7 @@ class IdentityBoundaryTests(unittest.TestCase):
             self.assertIn(required, names)
 
     def test_identity_models_count(self) -> None:
-        self.assertEqual(len(IDENTITY_DOCUMENT_MODELS), 7)
+        self.assertEqual(len(IDENTITY_DOCUMENT_MODELS), 8)
 
     def test_models_shim_directory_removed(self) -> None:
         self.assertFalse(
