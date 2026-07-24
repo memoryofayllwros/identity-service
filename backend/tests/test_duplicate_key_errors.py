@@ -2,7 +2,7 @@ import unittest
 
 from pymongo.errors import DuplicateKeyError
 
-from src.services.base import format_duplicate_key_error
+from src.infrastructure.persistence.mongo.errors import format_duplicate_key_error
 
 
 class DuplicateKeyErrorFormattingTests(unittest.TestCase):

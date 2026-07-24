@@ -40,7 +40,10 @@ FORBIDDEN_APPLICATION_IMPORTS = (
     "infrastructure",
 )
 
-MODULES_DIR = BACKEND_ROOT / "src" / "modules"
+LEGACY_DIRS = (
+    BACKEND_ROOT / "src" / "seed",
+    BACKEND_ROOT / "src" / "services",
+)
 
 
 class IdentityBoundaryTests(unittest.TestCase):
@@ -107,11 +110,12 @@ class IdentityBoundaryTests(unittest.TestCase):
             msg="EventPublisher port must be in domain/events/",
         )
 
-    def test_modules_directory_removed(self) -> None:
-        self.assertFalse(
-            MODULES_DIR.exists(),
-            msg="backend/src/modules/ must not exist; use api/ for HTTP adapters",
-        )
+    def test_legacy_directories_removed(self) -> None:
+        for path in LEGACY_DIRS:
+            self.assertFalse(
+                path.exists(),
+                msg=f"{path.relative_to(BACKEND_ROOT)} must not exist",
+            )
 
     def test_tenants_router_in_api(self) -> None:
         self.assertTrue(

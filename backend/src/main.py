@@ -43,7 +43,7 @@ from src.infrastructure.dependencies import (
     reset_event_publisher,
 )
 from src.infrastructure.settings import get_settings, validate_deployment_tenant
-from src.services.base import format_duplicate_key_error
+from src.infrastructure.persistence.mongo.errors import format_duplicate_key_error
 
 
 @asynccontextmanager
