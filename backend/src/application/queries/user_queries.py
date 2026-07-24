@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.application.dto import UserResponse, user_to_response
+from src.application.dto import UserDTO, user_to_dto
 from src.application.services.authorization_service import AuthorizationService
 from src.application.services.membership_service import MembershipService
 from src.domain.entities.membership import Membership
@@ -51,7 +51,7 @@ class GetUserHandler:
     membership_service: MembershipService
     tenant_instance_id: str
 
-    async def execute(self, query: GetUserQuery) -> UserResponse:
+    async def execute(self, query: GetUserQuery) -> UserDTO:
         user = query.user or await self.user_repo.find_by_id(query.user_id)
         if user is None:
             raise UserNotFound()
@@ -62,7 +62,7 @@ class GetUserHandler:
             tenant_instance_id=self.tenant_instance_id,
         )
         perms = await self.authz.permissions_for_membership(membership)
-        return user_to_response(
+        return user_to_dto(
             user,
             tenant_id=membership.tenant_id,
             tenant_name=tenant.name,
@@ -86,18 +86,18 @@ class ListUsersHandler:
     membership_service: MembershipService
     tenant_instance_id: str
 
-    async def execute(self, query: ListUsersQuery) -> list[UserResponse]:
+    async def execute(self, query: ListUsersQuery) -> list[UserDTO]:
         tenant = await self.tenant_repo.find_by_id(self.tenant_instance_id)
         if tenant is None:
             raise TenantNotFound()
 
         users = await self.user_repo.find_all()
-        results: list[UserResponse] = []
+        results: list[UserDTO] = []
         for user in users:
             membership = await self.membership_repo.find_by_tenant_and_user(tenant.id, user.id)
             role = membership.role if membership else UserRole.OPERATIONS
             results.append(
-                user_to_response(user, tenant_id=tenant.id, tenant_name=tenant.name, role=role)
+                user_to_dto(user, tenant_id=tenant.id, tenant_name=tenant.name, role=role)
             )
         return results
 

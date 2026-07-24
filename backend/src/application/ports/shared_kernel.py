@@ -1,0 +1,36 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+
+class SharedKernelPort(Protocol):
+    """Read-only access to the cross-service permission catalog and platform defaults."""
+
+    def all_permissions(self) -> tuple[str, ...]: ...
+
+    def platform_role_templates(self) -> dict[str, tuple[str, ...]]: ...
+
+    def plan_features(self, plan: str) -> tuple[str, ...]: ...
+
+    def known_plans(self) -> frozenset[str]: ...
+
+    @property
+    def role_code_admin(self) -> str: ...
+
+    @property
+    def role_code_operations(self) -> str: ...
+
+    @property
+    def identity_tenant_admin(self) -> str: ...
+
+    @property
+    def identity_user_admin(self) -> str: ...
+
+    @property
+    def identity_invite_manage(self) -> str: ...
+
+    @property
+    def default_tenant_name(self) -> str: ...
+
+    @property
+    def default_tenant_slug(self) -> str: ...

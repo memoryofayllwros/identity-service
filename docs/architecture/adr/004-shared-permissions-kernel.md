@@ -27,6 +27,7 @@ update to both services and a bump of `SHARED_KERNEL_VERSION`.
 
 - Negative: Manual coordination; drift is possible if the procedure is skipped.
 - Positive: No inter-repo runtime dependency; each service deploys independently.
+- Positive: Application layer accesses the permission catalog only through `SharedKernelPort`, implemented by `infrastructure/shared_kernel.py`; `shared/permissions.py` remains the sync source of truth.
 - Planned migration: Extract to a private `pacific-shared` Python package (Phase 2+).
   Trigger: when a third service needs the catalog, or when manual sync causes a defect.
 

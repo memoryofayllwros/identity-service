@@ -39,12 +39,8 @@ class InviteUserHandler:
         self._id_gen = id_gen
 
     async def execute(self, command: InviteUserCommand) -> InviteResult:
-        from src.shared.permissions import IDENTITY_INVITE_MANAGE, IDENTITY_TENANT_ADMIN
-
         try:
-            self._authz.check_permission(
-                command.actor, IDENTITY_INVITE_MANAGE, IDENTITY_TENANT_ADMIN
-            )
+            self._authz.check_invite_permission(command.actor)
         except AuthorizationError as exc:
             raise Forbidden(str(exc)) from exc
 

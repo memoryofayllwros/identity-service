@@ -41,6 +41,7 @@ API routes remain thin adapters that delegate to application handlers. The HTTP/
 - Positive: Application layer has zero FastAPI/framework imports; domain exceptions are translated to HTTP at the boundary in `main.py`.
 - Positive: EventPublisher port lives in `domain/events/publisher.py` alongside the events it publishes.
 - Positive: Application layer has zero `infrastructure.*` imports; auth crypto and deployment config are injected via `application/ports/` and `application/config.py`.
+- Positive: Application DTOs use transport-neutral names (`UserDTO`, `RegisterDTO`); HTTP aliases live in `schemas/auth.py`.
 - Positive: `Principal` lives in `application/principal.py`; JWT/password adapters remain in `infrastructure/security/`.
 - Negative: `backend/src/security/` compatibility shim removed; callers must use `infrastructure.security` or `application.principal`.
 - Positive: Strangler Fig migration — handlers replace services incrementally without API breaks.

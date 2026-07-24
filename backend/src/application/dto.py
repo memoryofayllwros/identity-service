@@ -22,7 +22,7 @@ def mobile_digits_from_pair(country_code: str, phone_number: str) -> str:
     return f"{cc}{phone_number.strip()}"
 
 
-class RegisterRequest(BaseModel):
+class RegisterDTO(BaseModel):
     email: EmailStr
     username: str = Field(min_length=3, max_length=50)
     full_name: str = Field(min_length=1, max_length=200)
@@ -32,7 +32,7 @@ class RegisterRequest(BaseModel):
     is_outsourced: bool = False
 
 
-class LoginRequest(BaseModel):
+class LoginDTO(BaseModel):
     """Login with username, email, or phone digits (country_code + phone_number)."""
 
     mobile: str = Field(..., min_length=1, max_length=128)
@@ -49,7 +49,7 @@ class LoginRequest(BaseModel):
         raise TypeError("mobile must be a string or {country_code, phone_number}")
 
 
-class UserResponse(BaseModel):
+class UserDTO(BaseModel):
     id: str
     email: EmailStr
     username: str
@@ -67,21 +67,21 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ProfileUpdate(BaseModel):
+class ProfileUpdateDTO(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = Field(default=None, min_length=1, max_length=200)
     phone: Optional[PhoneDTO] = None
 
 
-class ForgotPasswordRequest(BaseModel):
+class ForgotPasswordDTO(BaseModel):
     mobile: str = Field(..., min_length=1, max_length=128)
 
 
-class ForgotPasswordResponse(BaseModel):
+class ForgotPasswordResultDTO(BaseModel):
     message: str
 
 
-def user_to_response(
+def user_to_dto(
     user: User,
     *,
     tenant_id: str,
@@ -89,14 +89,14 @@ def user_to_response(
     role: UserRole,
     permissions: list[str] | None = None,
     perm_ver: int | None = None,
-) -> UserResponse:
+) -> UserDTO:
     phone = None
     if user.phone:
         phone = PhoneDTO(
             country_code=user.phone.country_code,
             phone_number=user.phone.phone_number,
         )
-    return UserResponse(
+    return UserDTO(
         id=user.id,
         email=user.email.value,
         username=user.username,
@@ -127,5 +127,5 @@ class TenantResult:
 class LoginResult:
     access_token: str
     expires_in_seconds: int
-    user: UserResponse
+    user: UserDTO
     refresh_token: str | None = None

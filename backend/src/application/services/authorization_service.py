@@ -13,13 +13,8 @@ from src.domain.repositories import (
     RoleRepository,
     TenantRepository,
 )
+from src.application.ports.shared_kernel import SharedKernelPort
 from src.application.principal import Principal
-from src.shared.permissions import (
-    ALL_PERMISSIONS,
-    PLATFORM_ROLE_TEMPLATES,
-    ROLE_CODE_ADMIN,
-    ROLE_CODE_OPERATIONS,
-)
 
 
 class AuthorizationError(Exception):
@@ -32,15 +27,18 @@ class AuthorizationService:
     membership_repo: MembershipRepository
     tenant_repo: TenantRepository
     permission_catalog_repo: PermissionCatalogRepository
+    shared_kernel: SharedKernelPort
     id_gen: IDGenerator
 
     async def ensure_permission_catalog(self) -> None:
-        await self.permission_catalog_repo.ensure_catalog(list(ALL_PERMISSIONS))
+        await self.permission_catalog_repo.ensure_catalog(
+            list(self.shared_kernel.all_permissions())
+        )
 
     async def ensure_platform_role_templates(self) -> dict[str, Role]:
         await self.ensure_permission_catalog()
         by_code: dict[str, Role] = {}
-        for code, perms in PLATFORM_ROLE_TEMPLATES.items():
+        for code, perms in self.shared_kernel.platform_role_templates().items():
             role = await self.role_repo.find_platform_template(code)
             if role is None:
                 role = Role(
@@ -78,7 +76,11 @@ class AuthorizationService:
 
     async def resolve_role_ids_for_legacy(self, role: UserRole, tenant_id: str) -> list[str]:
         roles = await self.ensure_tenant_roles(tenant_id)
-        code = ROLE_CODE_ADMIN if role == UserRole.ADMIN else ROLE_CODE_OPERATIONS
+        code = (
+            self.shared_kernel.role_code_admin
+            if role == UserRole.ADMIN
+            else self.shared_kernel.role_code_operations
+        )
         doc = roles.get(code)
         return [doc.id] if doc else []
 
@@ -122,3 +124,23 @@ class AuthorizationService:
         if any(principal.has_permission(code) for code in codes):
             return
         raise AuthorizationError("Forbidden.")
+
+    def check_invite_permission(self, principal: Principal) -> None:
+        self.check_permission(
+            principal,
+            self.shared_kernel.identity_invite_manage,
+            self.shared_kernel.identity_tenant_admin,
+        )
+
+    def check_tenant_admin_permission(self, principal: Principal) -> None:
+        self.check_permission(
+            principal,
+            self.shared_kernel.identity_tenant_admin,
+            self.shared_kernel.identity_user_admin,
+        )
+
+    def resolve_plan(self, plan: str) -> str:
+        return plan if plan in self.shared_kernel.known_plans() else "starter"
+
+    def plan_features(self, plan: str) -> list[str]:
+        return list(self.shared_kernel.plan_features(plan))

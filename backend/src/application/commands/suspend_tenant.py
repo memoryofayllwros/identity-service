@@ -10,7 +10,6 @@ from src.domain.repositories import AuthEventRepository, TenantRepository
 from src.domain.id_generator import IDGenerator
 from src.domain.unit_of_work import UnitOfWork
 from src.application.principal import Principal
-from src.shared.permissions import IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
 
 
 @dataclass
@@ -39,9 +38,7 @@ class SuspendTenantHandler:
         from src.domain.enums import UserRole
 
         try:
-            self._authz.check_permission(
-                command.actor, IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
-            )
+            self._authz.check_tenant_admin_permission(command.actor)
         except AuthorizationError as exc:
             raise Forbidden(str(exc)) from exc
 
@@ -96,12 +93,8 @@ class ActivateTenantHandler:
         self._id_gen = id_gen
 
     async def execute(self, command: ActivateTenantCommand) -> TenantResult:
-        from src.shared.permissions import PLAN_FEATURES
-
         try:
-            self._authz.check_permission(
-                command.actor, IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
-            )
+            self._authz.check_tenant_admin_permission(command.actor)
         except AuthorizationError as exc:
             raise Forbidden(str(exc)) from exc
 
@@ -109,7 +102,7 @@ class ActivateTenantHandler:
         if tenant is None:
             raise TenantNotFound()
 
-        features = list(tenant.features) or list(PLAN_FEATURES.get(tenant.plan, []))
+        features = list(tenant.features) or self._authz.plan_features(tenant.plan)
         tenant.activate(features=features)
 
         async with self._uow:

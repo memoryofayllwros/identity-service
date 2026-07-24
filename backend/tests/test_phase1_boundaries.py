@@ -39,6 +39,7 @@ FORBIDDEN_APPLICATION_IMPORTS = (
     "motor",
     "redis",
     "infrastructure",
+    "src.shared",
 )
 
 LEGACY_DIRS = (

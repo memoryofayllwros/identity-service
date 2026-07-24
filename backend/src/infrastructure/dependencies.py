@@ -15,6 +15,7 @@ from src.application.queries.user_queries import (
 )
 from src.application.config import DeploymentConfig
 from src.application.ports.password_hasher import PasswordHasher
+from src.application.ports.shared_kernel import SharedKernelPort
 from src.application.ports.token_service import TokenService
 from src.application.services.auth_application_service import AuthApplicationService
 from src.application.services.authorization_service import AuthorizationService
@@ -165,12 +166,20 @@ def get_permission_catalog_repository() -> MongoPermissionCatalogRepository:
 
 
 @lru_cache
+def get_shared_kernel() -> SharedKernelPort:
+    from src.infrastructure.shared_kernel import SharedKernelAdapter
+
+    return SharedKernelAdapter()
+
+
+@lru_cache
 def get_authorization_service() -> AuthorizationService:
     return AuthorizationService(
         role_repo=get_role_repository(),
         membership_repo=get_membership_repository(),
         tenant_repo=get_tenant_repository(),
         permission_catalog_repo=get_permission_catalog_repository(),
+        shared_kernel=get_shared_kernel(),
         id_gen=get_id_generator(),
     )
 
@@ -276,7 +285,7 @@ def get_ensure_default_tenant_handler() -> EnsureDefaultTenantHandler:
     return EnsureDefaultTenantHandler(
         tenant_repo=get_tenant_repository(),
         authz=get_authorization_service(),
-        publisher=build_event_publisher(),
+        uow=get_unit_of_work(),
         tenant_instance_id=cfg.tenant_instance_id,
     )
 

@@ -4,14 +4,14 @@ from dataclasses import dataclass
 
 from src.application.commands.ensure_default_tenant import EnsureDefaultTenantHandler
 from src.application.dto import (
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
-    LoginRequest,
+    ForgotPasswordDTO,
+    ForgotPasswordResultDTO,
+    LoginDTO,
     LoginResult,
-    ProfileUpdate,
-    RegisterRequest,
-    UserResponse,
-    user_to_response,
+    ProfileUpdateDTO,
+    RegisterDTO,
+    UserDTO,
+    user_to_dto,
 )
 from src.application.ports.password_hasher import PasswordHasher
 from src.application.ports.token_service import TokenService
@@ -95,7 +95,7 @@ class AuthApplicationService:
     ) -> LoginResult:
         return await self.token_issuance.issue_login(user, membership, tenant)
 
-    async def register(self, payload: RegisterRequest) -> UserResponse:
+    async def register(self, payload: RegisterDTO) -> UserDTO:
         if await self.user_repo.count() > 0:
             raise RegistrationClosed()
         if await self.user_repo.find_by_username(payload.username):
@@ -127,7 +127,7 @@ class AuthApplicationService:
         )
         await self._record_event("user.registered", tenant_id=tenant.id, user_id=user.id)
         perms = await self.authz.permissions_for_membership(membership)
-        return user_to_response(
+        return user_to_dto(
             user,
             tenant_id=tenant.id,
             tenant_name=tenant.name,
@@ -136,7 +136,7 @@ class AuthApplicationService:
             perm_ver=membership.perm_ver,
         )
 
-    async def login(self, payload: LoginRequest) -> LoginResult:
+    async def login(self, payload: LoginDTO) -> LoginResult:
         user = await self._find_by_login(payload.mobile)
         if user is None or not self.password_hasher.verify(payload.password, user.password_hash):
             await self._record_event("auth.login_failed", detail={"identifier": payload.mobile})
@@ -171,7 +171,7 @@ class AuthApplicationService:
             raise TenantSuspended()
         return await self.issue_login(user, membership, tenant)
 
-    async def update_profile(self, user: User, payload: ProfileUpdate) -> UserResponse:
+    async def update_profile(self, user: User, payload: ProfileUpdateDTO) -> UserDTO:
         updates = payload.model_dump(exclude_unset=True)
         email = updates.get("email")
         if email is not None:
@@ -196,9 +196,9 @@ class AuthApplicationService:
         )
 
     async def request_password_reset(
-        self, payload: ForgotPasswordRequest
-    ) -> ForgotPasswordResponse:
-        return ForgotPasswordResponse(
+        self, payload: ForgotPasswordDTO
+    ) -> ForgotPasswordResultDTO:
+        return ForgotPasswordResultDTO(
             message=(
                 "If an account exists for that identifier, your administrator can reset "
                 "your password. Please contact your system administrator."

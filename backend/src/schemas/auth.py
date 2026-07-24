@@ -5,25 +5,31 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.application.dto import (
-    ForgotPasswordRequest,
-    ForgotPasswordResponse,
-    LoginRequest,
+    ForgotPasswordDTO,
+    ForgotPasswordResultDTO,
+    LoginDTO,
     PhoneDTO,
-    ProfileUpdate,
-    RegisterRequest,
-    UserResponse,
+    ProfileUpdateDTO,
+    RegisterDTO,
+    UserDTO,
     mobile_digits_from_pair,
 )
 
-# HTTP-layer alias — routers and OpenAPI schema continue to see PhoneResponse
+# HTTP-layer aliases — routers and OpenAPI keep transport-oriented names.
 PhoneResponse = PhoneDTO
+UserResponse = UserDTO
+RegisterRequest = RegisterDTO
+LoginRequest = LoginDTO
+ProfileUpdate = ProfileUpdateDTO
+ForgotPasswordRequest = ForgotPasswordDTO
+ForgotPasswordResponse = ForgotPasswordResultDTO
 
 
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in_seconds: int
-    user: UserResponse
+    user: UserDTO
     refresh_token: Optional[str] = None
 
 
@@ -34,15 +40,21 @@ class OAuth2TokenResponse(BaseModel):
 
 
 __all__ = [
+    "ForgotPasswordDTO",
     "ForgotPasswordRequest",
     "ForgotPasswordResponse",
+    "ForgotPasswordResultDTO",
+    "LoginDTO",
     "LoginRequest",
     "LoginResponse",
     "OAuth2TokenResponse",
     "PhoneDTO",
     "PhoneResponse",
     "ProfileUpdate",
+    "ProfileUpdateDTO",
+    "RegisterDTO",
     "RegisterRequest",
+    "UserDTO",
     "UserResponse",
     "mobile_digits_from_pair",
 ]

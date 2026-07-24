@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, EmailStr, Field
 
-from src.application.dto import LoginResult, UserResponse
+from src.application.dto import LoginResult, UserDTO
 from src.application.services.authorization_service import AuthorizationService
 from src.application.services.membership_service import MembershipService
 from src.application.services.token_issuance_service import TokenIssuanceService
@@ -17,7 +17,6 @@ from src.domain.id_generator import IDGenerator
 from src.application.ports.password_hasher import PasswordHasher
 from src.domain.unit_of_work import UnitOfWork
 from src.domain.value_objects.email import Email
-from src.shared.permissions import PLAN_FEATURES
 
 
 class TenantRegisterRequest(BaseModel):
@@ -36,7 +35,7 @@ class TenantRegisterResponse(BaseModel):
     access_token: str
     refresh_token: str
     expires_in_seconds: int
-    user: UserResponse
+    user: UserDTO
 
 
 @dataclass
@@ -62,8 +61,8 @@ class RegisterTenantHandler:
             raise DuplicateUsername()
 
         await self.authz.ensure_platform_role_templates()
-        plan = payload.plan if payload.plan in PLAN_FEATURES else "starter"
-        features = list(PLAN_FEATURES.get(plan, PLAN_FEATURES["starter"]))
+        plan = self.authz.resolve_plan(payload.plan)
+        features = self.authz.plan_features(plan)
         tenant = Tenant.create(
             tenant_id=self.id_gen(),
             name=payload.tenant_name,
