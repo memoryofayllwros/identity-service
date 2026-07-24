@@ -100,6 +100,7 @@ Environment variables are defined in [`deployment/.env.example`](deployment/.env
 | `JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY` | RSA key pair for signing and JWKS |
 | `EVENT_TRANSPORT` | `in_process` (dev) or `redis_streams` (production) |
 | `REDIS_URL` | Required when using Redis Streams |
+| `IDENTITY_EVENT_STREAM` | Redis Stream key (default: `identity:events`) |
 
 See [`docs/architecture/IDENTITY_CONTRACT.md`](docs/architecture/IDENTITY_CONTRACT.md) for the full JWT claim schema and endpoint contract.
 
@@ -215,10 +216,9 @@ Example flow for tenant registration:
 
 ```
 RegisterTenantHandler
-  → create tenant aggregate
-  → create owner membership
-  → save via repositories
-  → publish domain events
+  → Tenant.create() / User.register()  (aggregates record domain events)
+  → UnitOfWork.commit()                (Mongo save + outbox in one step)
+  → OutboxRelayWorker                  (background relay to publisher)
   → issue JWT
 ```
 
@@ -274,19 +274,92 @@ Repository interface
 Mongo repository → MongoDB
 ```
 
-When domain events are raised:
+### Domain events: publish and subscribe
+
+**Design intent:** use **Command Handler + Outbox** inside Identity to produce events reliably; use **Redis Streams** to deliver those events to other platform services (Tracking, Quotation, …).
+
+Identity **publishes** lifecycle facts (`TenantCreated`, `UserRegistered`, `InviteAccepted`, …). It does **not** subscribe to Redis Streams—downstream services consume the stream and build their own projections.
+
+#### Internal — Command Handler + Outbox
+
+State-changing use cases follow this path:
+
+1. **Command handler** calls domain methods (e.g. `tenant.suspend()`).
+2. The **aggregate** appends events via `_record()` (see `domain/entities/_base.py`).
+3. **`UnitOfWork.commit()`** persists aggregates and outbox records together:
+   - save aggregates to MongoDB
+   - drain `aggregate.collect_events()` into the **outbox** collection
+4. **`OutboxRelayWorker`** (started in `main.py` lifespan) polls unpublished outbox rows, calls `EventPublisher.publish()`, then marks them published.
+
+This binds database writes and event emission so a successful commit cannot silently drop domain events.
 
 ```
-Tenant aggregate
-        │
-        ▼
-TenantCreated event
-        │
-        ▼
-Outbox / publisher
-        │
-        ▼
-Redis Stream (production) or in-process handler (dev)
+Command Handler
+      │
+      ▼
+Aggregate._record(TenantCreated, …)
+      │
+      ▼
+UnitOfWork.commit()
+      ├── Mongo: tenant / user / membership documents
+      └── Mongo: outbox records
+      │
+      ▼
+OutboxRelayWorker (async loop, every ~5s)
+      │
+      ▼
+EventPublisher.publish()
+```
+
+Key files:
+
+| File | Role |
+|------|------|
+| `domain/events/publisher.py` | `EventPublisher` port |
+| `infrastructure/persistence/mongo/unit_of_work.py` | Collects events → outbox on commit |
+| `infrastructure/messaging/outbox_relay.py` | Polls outbox, relays to publisher |
+| `infrastructure/messaging/event_publisher.py` | `InProcessEventPublisher`, `CompositeEventPublisher` |
+| `infrastructure/messaging/redis_streams.py` | `RedisStreamsPublisher` (`XADD`) |
+
+#### External — Redis Streams (cross-service publish)
+
+When `EVENT_TRANSPORT=redis_streams` and `REDIS_URL` is set, the relay publishes to Redis via `XADD`:
+
+```bash
+EVENT_TRANSPORT=redis_streams
+REDIS_URL=redis://localhost:6379/0
+IDENTITY_EVENT_STREAM=identity:events
+```
+
+`CompositeEventPublisher` fans out to:
+
+- **`InProcessEventPublisher`** — same-process handlers (tests, optional side effects)
+- **`RedisStreamsPublisher`** — cross-service delivery on stream `identity:events`
+
+With the default `EVENT_TRANSPORT=in_process`, events stay in-process; Redis is not required for local development.
+
+#### Subscribe — who consumes events?
+
+| Consumer | Mechanism | Where |
+|----------|-----------|-------|
+| Same Identity process | `InProcessEventPublisher.subscribe(event_type, handler)` | `infrastructure/messaging/event_publisher.py` |
+| Tracking / other services | Redis `XREADGROUP` on `identity:events` | **Not in this repo** — implement in each consumer |
+
+Downstream services must treat delivery as **at-least-once** and implement **idempotent** handlers. Do not read `identity_db` directly—project local views from events + JWT only.
+
+Full event catalog, payload shapes, and consumer guidelines:
+[`docs/architecture/EVENT_CONTRACT.md`](docs/architecture/EVENT_CONTRACT.md)
+
+```
+OutboxRelayWorker
+      │
+      ▼
+EventPublisher.publish()
+      ├── InProcessEventPublisher  →  handler(event)     [same process]
+      └── RedisStreamsPublisher    →  XADD identity:events
+                                              │
+                                              ▼
+                                    Tracking XREADGROUP  [external]
 ```
 
 Each layer talks only to its immediate neighbour.
