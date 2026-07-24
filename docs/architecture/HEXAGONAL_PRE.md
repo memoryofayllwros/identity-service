@@ -66,13 +66,13 @@ Fourth, API is a thin adapter—Application raises `DuplicateEmail()`; HTTP 409 
 
 ---
 
-### Slide 7 — Add User to Existing Tenant
+### Slide 7 — User Updates Own Profile
 
 **中文（~60s）：**  
-用一个完整例子：**在已有 tenant 下添加新 user**。分两步：管理员 `POST /tenants/me/invites`，`InviteUserHandler` 调 `Invite.create()`，UoW 写入 invite 和 `InviteCreated` 事件。被邀请人 `POST /tenants/invites/accept`，`AcceptInviteHandler` 调 `User.register()` 和 `invite.accept()`，再在同一 UoW 里注册 user、invite、membership 并 `commit()`——`UserRegistered`、`InviteAccepted`、`UserAddedToTenant` 一并进 outbox，Relay 再发到 Redis。重点是：**业务说「把这个人加进我的 tenant，并原子落库+产事件」；Mongo 用 UoW + outbox 实现——通过 `UnitOfWork` port 连接，互不渗透。**
+用一个简单例子：**用户修改自己的资料**。已登录用户 `PATCH /auth/me`，`api/auth.py` 只做鉴权和加载 user，然后交给 `AuthApplicationService.update_profile()`——先做 duplicate-email 检查，再调 domain 的 `User.update_profile()`，最后通过 `UserRepository` port 落库，返回 `UserDTO`。重点是：**业务说「让用户改自己的 profile」；HTTP 和 Mongo 都在外层——application service 通过 repository port 编排，domain 持有更新规则，互不渗透。**
 
 **English (~60s):**  
-A full example: **adding a new user to an existing tenant**. Two steps: an admin `POST`s `/tenants/me/invites`; `InviteUserHandler` calls `Invite.create()` and UoW persists the invite plus `InviteCreated`. The invitee `POST`s `/tenants/invites/accept`; `AcceptInviteHandler` calls `User.register()` and `invite.accept()`, then registers user, invite, and membership in one UoW `commit()`—`UserRegistered`, `InviteAccepted`, and `UserAddedToTenant` land in the outbox; the relay forwards to Redis. The point: business says "add this person to my tenant atomically with events"; Mongo implements that via UoW + outbox—connected through the `UnitOfWork` port without leaking either way.
+A simple example: **a user updates their own profile**. A logged-in user `PATCH`es `/auth/me`; `api/auth.py` only authenticates and loads the user, then delegates to `AuthApplicationService.update_profile()`—duplicate-email check first, then `User.update_profile()` in the domain, then persist via the `UserRepository` port and return a `UserDTO`. The point: business says "let the user edit their profile"; HTTP and Mongo stay outside—the application service orchestrates through repository ports, and the domain holds the update rules, without leaking either way.
 
 ---
 

@@ -49,16 +49,16 @@ Bilingual PPT outline (10 slides) and speaker script for explaining hexagonal pu
 
 ```mermaid
 flowchart TB
-  subgraph outer [Adapters — replaceable technology]
-    API[FastAPI / api/]
-    Mongo[MongoDB / Beanie]
-    JWT[JWT / security]
-    Redis[Redis Streams / outbox]
+  subgraph outer ["Adapters - replaceable technology"]
+    API["FastAPI / api/"]
+    Mongo["MongoDB / Beanie"]
+    JWT["JWT / security"]
+    Redis["Redis Streams / outbox"]
   end
 
-  subgraph core [Core — business]
-    App[Application — use cases]
-    Dom[Domain — business rules]
+  subgraph core ["Core - business"]
+    App["Application - use cases"]
+    Dom["Domain - business rules"]
   end
 
   API --> App
@@ -67,10 +67,10 @@ flowchart TB
   JWT --> App
   Redis --> Dom
 
-  Dom -.->|never| API
-  Dom -.->|never| Mongo
-  App -.->|never| Mongo
-  App -.->|never| JWT impl
+  Dom -. never .-> API
+  Dom -. never .-> Mongo
+  App -. never .-> Mongo
+  App -. never .-> JWT
 ```
 
 **Purity =** the core does not know HTTP status codes, Mongo document shapes, or JWT library details.
@@ -119,56 +119,42 @@ README phrase **"Dependencies always point inward"** refers to this model.
 
 ---
 
-### Slide 7 — End-to-End Example: Add User to Existing Tenant
+### Slide 7 — End-to-End Example: User Updates Own Profile
 
-**Scenario:** Admin invites a colleague; invitee accepts and joins the tenant (two command handlers, one UoW path on accept).
+**Scenario:** A logged-in user changes their name, email, or phone — one request, one application service, one aggregate.
 
 **Flow:**
 ```
-Step 1 — Admin creates invite
-POST /tenants/me/invites
-  → InviteUserHandler
-  → Invite.create()  (_record InviteCreated)
-  → UnitOfWork.commit()
-
-Step 2 — Invitee joins tenant (user creation)
-POST /tenants/invites/accept
-  → AcceptInviteHandler
-  → User.register() + invite.accept()
-  → UnitOfWork: user + invite + membership
-  → UnitOfWork.commit()  (UserRegistered, InviteAccepted, UserAddedToTenant → outbox)
-  → OutboxRelayWorker → Redis Streams (production)
+PATCH /auth/me
+  → api/auth.py (thin adapter — auth + load user)
+  → AuthApplicationService.update_profile()
+  → duplicate-email check (application rule)
+  → User.update_profile()  (domain)
+  → UserRepository.save()  (port)
+  → UserDTO → UserResponse
 ```
 
-**Visual:** Sequence diagram (focus on accept step)
+**Visual:** Sequence diagram
 
 ```mermaid
 sequenceDiagram
-  participant Admin
-  participant Invitee
-  participant API as api/tenants.py
-  participant InviteH as InviteUserHandler
-  participant AcceptH as AcceptInviteHandler
-  participant Domain as User + Invite + Membership
-  participant UoW as MongoUnitOfWork
-  participant DB as MongoDB
+  participant User
+  participant API as auth.py
+  participant Svc as AuthApplicationService
+  participant Domain as User entity
+  participant Repo as UserRepository
 
-  Admin->>API: POST /tenants/me/invites
-  API->>InviteH: execute(InviteUserCommand)
-  InviteH->>Domain: Invite.create()
-  InviteH->>UoW: register(invite) → commit()
-
-  Invitee->>API: POST /tenants/invites/accept
-  API->>AcceptH: execute(AcceptInviteCommand)
-  AcceptH->>Domain: User.register(), invite.accept()
-  AcceptH->>UoW: register(user, invite, membership)
-  UoW->>Domain: collect_events()
-  UoW->>DB: save aggregates + outbox
-  AcceptH->>API: TenantResponse
-  API->>Invitee: user joined tenant
+  User->>API: PATCH /auth/me
+  API->>Repo: find_by_id(user_id)
+  Repo-->>API: User
+  API->>Svc: update_profile(user, payload)
+  Svc->>Domain: update_profile(email, full_name, phone)
+  Svc->>Repo: save(user)
+  Svc-->>API: UserDTO
+  API-->>User: UserResponse
 ```
 
-**Talking point:** Business says "add this person to my tenant atomically"; Mongo implements via UoW + outbox — connected by the `UnitOfWork` port without leaking either way.
+**Talking point:** Business says "let the user edit their profile"; HTTP and Mongo stay outside — the application service orchestrates through repository ports, and the domain holds the update rules.
 
 ---
 
