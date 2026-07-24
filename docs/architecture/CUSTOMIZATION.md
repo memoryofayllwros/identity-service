@@ -4,24 +4,24 @@ Domain layer is the **core** of customization, but adapting this Identity Servic
 
 ## When changing domain alone is enough
 
-These changes can be made **almost entirely in domain**, as long as **use-case flows stay the same** (same register / invite / login flows, different rules):
+These changes can be made **almost entirely in domain**, as long as **use-case flows stay the same** (same register / admin-create / login flows, different rules):
 
-- Adjust **business invariants** on existing entities (e.g. invite expiry days, tenant suspend rules)
-- Add **new behavior** to existing aggregates (e.g. `Tenant.change_plan()`)
-- Add new **domain events** (e.g. `TenantPlanChanged`)
+- Adjust **business invariants** on existing entities (e.g. lockout thresholds, company suspend rules)
+- Add **new behavior** to existing aggregates (e.g. `User.require_mfa()`)
+- Add new **domain events** (e.g. `UserPasswordChanged`)
 - Tighten **value object** validation (Email, Phone format)
 
-Example: changing invite expiry logic belongs mainly in `Invite.accept()` and `Invite.create()` (`backend/src/domain/entities/invite.py`).
+Example: changing lockout rules belongs mainly in `User.record_failed_login()` (`backend/src/domain/entities/user.py`).
 
 ## What most customizations touch
 
 | Customization | Domain | Application | API | Infrastructure | Other |
 |---------------|--------|-------------|-----|----------------|-------|
-| Change business rules (expiry, state machine) | ✅ | Sometimes | ❌ | ❌ | — |
-| **New use case** (SSO login, multi-tenant switch) | ✅ | ✅ commands/services | ✅ new routes | ✅ new port impl | config |
+| Change business rules (lockout, status machine) | ✅ | Sometimes | ❌ | ❌ | — |
+| **New use case** (SSO login, external IdP) | ✅ | ✅ commands/services | ✅ new routes | ✅ new port impl | config |
 | **New entity** (Organization, Team) | ✅ entity + repo interface | ✅ handler | ✅ schema/route | ✅ document + mapper | migrations |
-| **Different permission model** | ✅ Role/Membership | ✅ AuthorizationService | ✅ auth dependencies | — | `shared/permissions.py` |
-| **Different plan/feature bundles** | Optional | Optional | entitlements routes | — | `PLAN_FEATURES` |
+| **Different permission model** | ✅ User/Role | ✅ AuthorizationService | ✅ auth dependencies | — | `shared/permissions.py` |
+| **Different feature bundles** | Optional | Optional | company routes | — | `PLAN_FEATURES` |
 | **Deployment only** (single tenant ID, JWT) | ❌ | ❌ | ❌ | ❌ | `.env` |
 
 ## Why domain alone is not enough
@@ -37,27 +37,28 @@ Infrastructure → how persistence, JWT, and messaging are implemented
 
 **Domain does not define whether a use case exists.**
 
-Example: accept invite flow
+Example: admin-create user flow
 
-1. `api/tenants.py` — HTTP entry
-2. `AcceptInviteHandler` — orchestration (load data, transaction, audit)
-3. `Invite.accept()` — business rules
+1. `api/identity_routers.py` — HTTP entry (`POST /api/users`)
+2. `CreateUserHandler` — orchestration (validate, hash password, UoW, outbox)
+3. `User.register()` — business rules + `UserRegistered` event
 4. Mongo repository — persistence
 
-Changing only `Invite.accept()` does not add a new API or workflow. Adding only an API route without domain/application changes will not enforce correct business rules.
+Changing only `User.register()` does not add a new API or workflow. Adding only an API route without domain/application changes will not enforce correct business rules.
 
 ## Common reuse patterns in this project
 
 ### 1. Configuration only (minimal code changes)
 
 - `TENANT_INSTANCE_ID`, JWT keys
-- `PLAN_FEATURES` (different SaaS tiers)
+- `PLAN_FEATURES` (bootstrap default company features)
 - `shared/permissions.py` (different capability prefixes)
 
 ### 2. Domain + application (most common)
 
 - New registration rules → `User.register()` + `AuthApplicationService.register()`
-- New tenant lifecycle → `Tenant` entity + `SuspendTenantHandler`, etc.
+- New user provisioning rules → `CreateUserHandler`
+- Company profile rules → `Tenant.update_profile()` + company API
 
 ### 3. Domain + application + infrastructure
 
@@ -90,5 +91,6 @@ Changing only `Invite.accept()` does not add a new API or workflow. Adding only 
 
 - [ADR-002: Identity boundary and repo extraction](./adr/002-identity-boundary-and-repo-extraction.md)
 - [ADR-003: Hexagonal Architecture](./adr/003-hexagonal-architecture.md)
+- [DATA_SCHEMA.md](./DATA_SCHEMA.md)
 - [IDENTITY_CONTRACT.md](./IDENTITY_CONTRACT.md)
 - [README.md](../../README.md)

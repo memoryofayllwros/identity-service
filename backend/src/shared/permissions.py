@@ -2,7 +2,7 @@
 
 Capability-prefixed codes: tracking.*, identity.*, product.*, tender.*
 
-Keep in sync with pacific-equipment-tracking/backend/src/shared/permissions.py
+Keep in sync with identity-service/backend/src/shared/permissions.py
 (manual sync until shared package in Phase 2+).
 See ADR-004 for sync procedure.
 """
@@ -10,11 +10,11 @@ See ADR-004 for sync procedure.
 from __future__ import annotations
 
 # Shared-kernel version — update this string whenever the catalog changes,
-# then copy this file to pacific-equipment-tracking repo and update its pin too.
+# then copy this file to identity-service repo and update its pin too.
 # See ADR-004 for the planned path to a proper shared package.
 SHARED_KERNEL_VERSION: str = "2026-07-23"
 
-# Identity platform
+# Identity service
 IDENTITY_TENANT_ADMIN = "identity.tenant.admin"
 IDENTITY_USER_ADMIN = "identity.user.admin"
 IDENTITY_USER_READ = "identity.user.read"

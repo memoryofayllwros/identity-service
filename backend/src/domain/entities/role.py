@@ -13,9 +13,9 @@ class Role(AggregateRoot):
     code: str
     name: str
     permissions: list[str] = field(default_factory=list)
-    tenant_id: Optional[str] = None
     is_system: bool = True
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     def grant_permission(self, code: str) -> None:
         if code not in self.permissions:

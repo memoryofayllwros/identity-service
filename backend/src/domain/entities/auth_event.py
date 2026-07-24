@@ -12,7 +12,6 @@ from src.domain.utils import now_hk
 class AuthEvent(AggregateRoot):
     id: str
     event_type: str
-    tenant_id: Optional[str] = None
     user_id: Optional[str] = None
     actor_user_id: Optional[str] = None
     detail: dict[str, Any] = field(default_factory=dict)
@@ -24,7 +23,6 @@ class AuthEvent(AggregateRoot):
         *,
         event_id: str,
         event_type: str,
-        tenant_id: str | None = None,
         user_id: str | None = None,
         actor_user_id: str | None = None,
         detail: dict[str, Any] | None = None,
@@ -32,7 +30,6 @@ class AuthEvent(AggregateRoot):
         return cls(
             id=event_id,
             event_type=event_type,
-            tenant_id=tenant_id,
             user_id=user_id,
             actor_user_id=actor_user_id,
             detail=detail or {},

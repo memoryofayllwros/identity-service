@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "pacific-identity-platform"
+name = "identity-service"
 version = "0.3.0"
-description = "Pacific Identity Platform IAM service (MongoDB + Beanie)"
+description = "Identity Service IAM service (MongoDB + Beanie)"
 authors = ["memoryofayllwros <jingwang.official@gmail.com>"]
 packages = [{ include = "src" }]
 

@@ -1,23 +1,10 @@
 from datetime import datetime
-from typing import Generic, Optional, TypeVar
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.infrastructure.persistence.mongo.embeds import MobileInfo
-from src.domain.enums import UserRole
-
-T = TypeVar("T")
-
-
-class PaginatedResponse(BaseModel, Generic[T]):
-    items: list[T]
-    total: int
-    skip: int
-    limit: int
-
-
-class MessageResponse(BaseModel):
-    message: str
+from src.domain.enums import UserRole, UserStatus
 
 
 class UserCreate(BaseModel):
@@ -26,7 +13,8 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     password: str = Field(min_length=8, max_length=128)
     phone: Optional[MobileInfo] = None
-    role: UserRole = UserRole.OPERATIONS
+    position: str = ""
+    role_code: str = "operations"
     is_outsourced: bool = False
 
 
@@ -34,9 +22,10 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
     phone: Optional[MobileInfo] = None
-    role: Optional[UserRole] = None
+    position: Optional[str] = None
+    role_code: Optional[str] = None
     is_outsourced: Optional[bool] = None
-    is_active: Optional[bool] = None
+    status: Optional[UserStatus] = None
 
 
 class UserListResponse(BaseModel):
@@ -45,9 +34,11 @@ class UserListResponse(BaseModel):
     username: str
     full_name: str
     phone: Optional[MobileInfo] = None
+    position: str = ""
     role: UserRole
     is_outsourced: bool
-    is_active: bool
+    status: UserStatus
+    must_change_password: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

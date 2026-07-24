@@ -1,10 +1,9 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, SecurityScopes
 
-from src.domain.enums import UserRole
+from src.domain.enums import UserRole, UserStatus
 from src.infrastructure.dependencies import (
     get_authorization_service,
-    get_membership_repository,
     get_user_repository,
 )
 from src.infrastructure.security.principal import Principal
@@ -49,7 +48,7 @@ def _principal_from_claims(payload: dict, *, bearer_token: str | None = None) ->
 
 
 async def _load_principal(token: str) -> Principal:
-    """Verify JWT, ensure user is active, and resolve live permissions from membership."""
+    """Verify JWT, ensure user is active, and resolve live permissions from user document."""
     try:
         payload = decode_access_token(token)
     except SecurityError as exc:
@@ -59,40 +58,25 @@ async def _load_principal(token: str) -> Principal:
     user = await get_user_repository().find_by_id(principal.user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User does not exist.")
-    if not user.is_active:
+    if user.status != UserStatus.ACTIVE:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is inactive.")
 
-    membership = await get_membership_repository().find_by_tenant_and_user(
-        principal.tenant_id, principal.user_id
+    perms = get_authorization_service().permissions_for_user(user)
+    role_code = get_authorization_service().infer_role_from_permissions(list(perms))
+    role = UserRole.ADMIN if role_code == UserRole.ADMIN.value else UserRole.OPERATIONS
+    principal = Principal(
+        user_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        role=role,
+        email=user.email.value,
+        full_name=user.full_name,
+        role_ids=[],
+        perm_ver=1,
+        scopes=list(perms)[:32],
+        permissions=frozenset(perms),
+        bearer_token=token,
     )
-    if membership is not None and membership.is_active:
-        perms = await get_authorization_service().permissions_for_membership(membership)
-        principal = Principal(
-            user_id=principal.user_id,
-            tenant_id=principal.tenant_id,
-            role=membership.role,
-            email=user.email.value,
-            full_name=user.full_name,
-            role_ids=list(membership.role_ids),
-            perm_ver=membership.perm_ver,
-            scopes=list(perms)[:32],
-            permissions=frozenset(perms),
-            bearer_token=token,
-        )
-        bind_tenant_id(principal.tenant_id)
-    else:
-        principal = Principal(
-            user_id=principal.user_id,
-            tenant_id=principal.tenant_id,
-            role=principal.role,
-            email=user.email.value,
-            full_name=user.full_name,
-            role_ids=principal.role_ids,
-            perm_ver=principal.perm_ver,
-            scopes=principal.scopes,
-            permissions=frozenset(principal.scopes),
-            bearer_token=token,
-        )
+    bind_tenant_id(principal.tenant_id)
     return principal
 
 

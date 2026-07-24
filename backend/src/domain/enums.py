@@ -6,13 +6,12 @@ class UserRole(str, Enum):
     OPERATIONS = "operations"
 
 
+class UserStatus(str, Enum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+    DEACTIVATED = "deactivated"
+
+
 class TenantStatus(str, Enum):
     ACTIVE = "active"
     SUSPENDED = "suspended"
-
-
-class InviteStatus(str, Enum):
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    REVOKED = "revoked"
-    EXPIRED = "expired"

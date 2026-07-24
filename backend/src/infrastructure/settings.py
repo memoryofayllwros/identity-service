@@ -1,4 +1,4 @@
-"""Settings for Pacific Identity Platform (Phase 1 single-tenant)."""
+"""Settings for Identity Service (Phase 1 single-tenant)."""
 
 from functools import lru_cache
 from pathlib import Path

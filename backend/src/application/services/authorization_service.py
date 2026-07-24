@@ -2,19 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.domain.entities.membership import Membership
 from src.domain.entities.role import Role
-from src.domain.entities.tenant import Tenant
-from src.domain.enums import UserRole
+from src.domain.entities.user import User
 from src.domain.id_generator import IDGenerator
-from src.domain.repositories import (
-    MembershipRepository,
-    PermissionCatalogRepository,
-    RoleRepository,
-    TenantRepository,
-)
+from src.domain.repositories import RoleRepository
 from src.application.ports.shared_kernel import SharedKernelPort
 from src.application.principal import Principal
+from src.shared.permissions import IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN
 
 
 class AuthorizationError(Exception):
@@ -24,26 +18,16 @@ class AuthorizationError(Exception):
 @dataclass
 class AuthorizationService:
     role_repo: RoleRepository
-    membership_repo: MembershipRepository
-    tenant_repo: TenantRepository
-    permission_catalog_repo: PermissionCatalogRepository
     shared_kernel: SharedKernelPort
     id_gen: IDGenerator
 
-    async def ensure_permission_catalog(self) -> None:
-        await self.permission_catalog_repo.ensure_catalog(
-            list(self.shared_kernel.all_permissions())
-        )
-
-    async def ensure_platform_role_templates(self) -> dict[str, Role]:
-        await self.ensure_permission_catalog()
+    async def ensure_system_roles(self) -> dict[str, Role]:
         by_code: dict[str, Role] = {}
         for code, perms in self.shared_kernel.platform_role_templates().items():
-            role = await self.role_repo.find_platform_template(code)
+            role = await self.role_repo.find_by_code(code)
             if role is None:
                 role = Role(
                     id=self.id_gen(),
-                    tenant_id=None,
                     code=code,
                     name=code.replace("_", " ").title(),
                     permissions=list(perms),
@@ -56,67 +40,14 @@ class AuthorizationService:
             by_code[code] = role
         return by_code
 
-    async def ensure_tenant_roles(self, tenant_id: str) -> dict[str, Role]:
-        templates = await self.ensure_platform_role_templates()
-        by_code: dict[str, Role] = {}
-        for code, template in templates.items():
-            role = await self.role_repo.find_tenant_role(tenant_id, code)
-            if role is None:
-                role = Role(
-                    id=self.id_gen(),
-                    tenant_id=tenant_id,
-                    code=code,
-                    name=template.name,
-                    permissions=list(template.permissions),
-                    is_system=True,
-                )
-                await self.role_repo.save(role)
-            by_code[code] = role
-        return by_code
-
-    async def resolve_role_ids_for_legacy(self, role: UserRole, tenant_id: str) -> list[str]:
-        roles = await self.ensure_tenant_roles(tenant_id)
-        code = (
-            self.shared_kernel.role_code_admin
-            if role == UserRole.ADMIN
-            else self.shared_kernel.role_code_operations
-        )
-        doc = roles.get(code)
-        return [doc.id] if doc else []
-
-    async def permissions_for_role_ids(self, role_ids: list[str]) -> list[str]:
-        if not role_ids:
+    async def permissions_for_role_code(self, role_code: str) -> list[str]:
+        role = await self.role_repo.find_by_code(role_code)
+        if role is None:
             return []
-        roles = await self.role_repo.find_by_ids(role_ids)
-        collected: set[str] = set()
-        for role in roles:
-            collected.update(role.permissions)
-        return sorted(collected)
+        return sorted(role.permissions)
 
-    async def permissions_for_membership(self, membership: Membership) -> list[str]:
-        role_ids = list(membership.role_ids)
-        if not role_ids:
-            role_ids = await self.resolve_role_ids_for_legacy(membership.role, membership.tenant_id)
-            if role_ids:
-                membership.assign_roles(role_ids)
-                await self.membership_repo.save(membership)
-        return await self.permissions_for_role_ids(role_ids)
-
-    async def membership_perm_ver(
-        self, membership: Membership, tenant: Tenant | None = None
-    ) -> int:
-        if tenant is not None:
-            return max(int(membership.perm_ver or 1), int(tenant.perm_ver or 1))
-        return int(membership.perm_ver or 1)
-
-    async def bump_tenant_perm_ver(self, tenant_id: str) -> int:
-        tenant = await self.tenant_repo.find_by_id(tenant_id)
-        if tenant is None:
-            return 1
-        new_ver = tenant.bump_perm_ver()
-        await self.tenant_repo.save(tenant)
-        await self.membership_repo.sync_perm_ver_for_tenant(tenant_id, new_ver)
-        return new_ver
+    def permissions_for_user(self, user: User) -> list[str]:
+        return sorted(user.permissions)
 
     def check_permission(self, principal: Principal, *codes: str) -> None:
         if not codes:
@@ -125,22 +56,15 @@ class AuthorizationService:
             return
         raise AuthorizationError("Forbidden.")
 
-    def check_invite_permission(self, principal: Principal) -> None:
-        self.check_permission(
-            principal,
-            self.shared_kernel.identity_invite_manage,
-            self.shared_kernel.identity_tenant_admin,
-        )
-
-    def check_tenant_admin_permission(self, principal: Principal) -> None:
+    def check_user_admin_permission(self, principal: Principal) -> None:
         self.check_permission(
             principal,
             self.shared_kernel.identity_tenant_admin,
             self.shared_kernel.identity_user_admin,
         )
 
-    def resolve_plan(self, plan: str) -> str:
-        return plan if plan in self.shared_kernel.known_plans() else "starter"
-
-    def plan_features(self, plan: str) -> list[str]:
-        return list(self.shared_kernel.plan_features(plan))
+    def infer_role_from_permissions(self, permissions: list[str]) -> str:
+        admin_markers = {IDENTITY_TENANT_ADMIN, IDENTITY_USER_ADMIN}
+        if admin_markers.intersection(permissions):
+            return self.shared_kernel.role_code_admin
+        return self.shared_kernel.role_code_operations

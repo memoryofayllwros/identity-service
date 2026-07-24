@@ -10,6 +10,8 @@ Cross-service integration for the Pacific Identity Platform. Tracking and other 
 | `REDIS_URL` | — | Required when `EVENT_TRANSPORT=redis_streams` |
 | `IDENTITY_EVENT_STREAM` | `identity:events` | Redis Stream key |
 
+Domain events are written to the `outbox` collection inside the same transaction as aggregate persistence, then relayed to Redis by `OutboxRelayWorker`.
+
 ## Stream format
 
 Each message is an `XADD` entry with string fields from `DomainEvent.to_dict()`:
@@ -19,32 +21,53 @@ Each message is an `XADD` entry with string fields from `DomainEvent.to_dict()`:
   "type": "UserRegistered",
   "occurred_at": "2026-07-21T15:30:00+08:00",
   "user_id": "01H...",
-  "email": "user@example.com",
-  "tenant_id": "01H..."
+  "mobile": "+85291234567"
 }
 ```
 
-Nested values (e.g. `role_ids` arrays) are JSON-encoded strings in Redis.
+Nested values (e.g. arrays) are JSON-encoded strings in Redis when required by the publisher adapter.
 
 ## Event catalog
 
+### Currently emitted (single-tenant schema)
+
 | Event | Fields | When emitted |
 |-------|--------|--------------|
-| `TenantCreated` | `tenant_id`, `name`, `slug` | Default tenant bootstrap or self-serve signup |
-| `TenantSuspended` | `tenant_id`, `reason?` | Admin suspends tenant |
-| `UserRegistered` | `user_id`, `email`, `tenant_id` | New account after invite accept or registration |
-| `UserAddedToTenant` | `tenant_id`, `user_id`, `role` | Membership created or restored |
-| `InviteCreated` | `invite_id`, `tenant_id`, `email` | Admin creates invite |
-| `InviteAccepted` | `invite_id`, `tenant_id`, `user_id` | Invitee completes signup |
-| `RoleChanged` | `tenant_id`, `user_id`, `role_ids` | Membership role assignment changes |
+| `UserRegistered` | `user_id`, `mobile` (E.164) | Admin creates user via `CreateUserHandler` (UoW + outbox) |
+| `UserDeactivated` | `user_id` | User aggregate deactivated (UoW + outbox) |
+| `TenantCreated` | `tenant_id`, `name`, `slug` | Defined on `Tenant.create()`; emitted only when persisted through a UoW path |
+
+> **Note:** Bootstrap registration (`POST /api/auth/register`) and default company seeding save directly without outbox today. Consumers should not rely on those paths producing stream events until wired through UoW.
+
+### Auth audit events (MongoDB only)
+
+These are stored in `auth_events` and are **not** published to Redis Streams:
+
+| `event_type` | Description |
+|--------------|-------------|
+| `user.registered` | Bootstrap admin registered |
+| `auth.login` | Successful login |
+| `auth.login_failed` | Failed login |
+| `auth.password_changed` | Password changed |
+
+### Removed (legacy multi-tenant schema)
+
+These event types remain in `domain/events/` for reference but are **no longer emitted**:
+
+| Event | Reason removed |
+|-------|----------------|
+| `UserAddedToTenant` | No membership model |
+| `InviteCreated` / `InviteAccepted` | Replaced by admin-create flow |
+| `RoleChanged` | Permissions updated in-place on user row |
+| `TenantSuspended` | Company suspend not exposed via API yet |
 
 ## Consumer guidelines
 
 1. Use consumer groups (`XREADGROUP`) for at-least-once delivery.
-2. Idempotency key: `(type, tenant_id, user_id, occurred_at)` or event-specific IDs.
+2. Idempotency key: `(type, user_id, occurred_at)` or event-specific IDs (`user_id` for `UserRegistered`).
 3. Do **not** read `identity_db` from Tracking — project only from events + JWT.
-4. On `TenantSuspended`, invalidate local permission caches for that tenant.
-5. On `RoleChanged` or membership events, refresh projections keyed by `user_id` + `tenant_id`.
+4. On `UserDeactivated`, invalidate local caches keyed by `user_id`.
+5. JWT still carries `tenant_id=DEFAULT_TENANT_ID` for downstream compatibility; there is no tenant switching.
 
 ## Example consumer (pseudo)
 

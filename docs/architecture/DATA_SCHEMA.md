@@ -4,7 +4,9 @@ MongoDB document models for the Pacific Identity Platform, defined with [Beanie 
 
 **Database:** `identity_db` (configurable via `IDENTITY_DATABASE_NAME`)
 
-**Registered models:** `TenantDoc`, `MembershipDoc`, `UserDoc`, `RoleDoc`, `PermissionDoc`, `InviteDoc`, `AuthEventDoc`
+**Deployment model:** **Single-tenant** — one company profile per deployment (`TENANT_INSTANCE_ID`). Users, roles, and permissions are global within that deployment. There is no membership table, invite flow, or per-tenant role duplication.
+
+**Registered models:** `TenantDocument`, `UserDocument`, `RoleDocument`, `AuthEventDocument`, `OutboxDocument`
 
 ---
 
@@ -12,60 +14,43 @@ MongoDB document models for the Pacific Identity Platform, defined with [Beanie 
 
 ```mermaid
 erDiagram
-    TenantDoc ||--o{ MembershipDoc : "tenant_id"
-    UserDoc ||--o{ MembershipDoc : "user_id"
-    TenantDoc ||--o{ RoleDoc : "tenant_id (custom)"
-    RoleDoc ||--o{ MembershipDoc : "role_ids[]"
-    PermissionDoc ||--o{ RoleDoc : "permissions[] (codes)"
-    TenantDoc ||--o{ InviteDoc : "tenant_id"
-    UserDoc ||--o{ InviteDoc : "invited_by_user_id"
-    TenantDoc ||--o{ AuthEventDoc : "tenant_id"
-    UserDoc ||--o{ AuthEventDoc : "user_id / actor_user_id"
+    TenantDocument ||..|| UserDocument : "single deployment"
+    RoleDocument ||..o{ UserDocument : "role_code at create copies permissions"
+    UserDocument ||--o{ AuthEventDocument : "user_id / actor_user_id"
+    OutboxDocument }o--|| UserDocument : "domain events from UoW"
 
-    TenantDoc {
+    TenantDocument {
         string tenant_id PK
         string slug UK
         string status
-        int perm_ver
+        string[] features
     }
 
-    UserDoc {
+    UserDocument {
         string user_id PK
         string username UK
         string email UK
         string password_hash
-    }
-
-    MembershipDoc {
-        string membership_id PK
-        string tenant_id FK
-        string user_id FK
-        string[] role_ids
-    }
-
-    RoleDoc {
-        string role_id PK
-        string tenant_id FK "nullable (platform template)"
-        string code
         string[] permissions
-    }
-
-    PermissionDoc {
-        string permission_id PK
-        string code UK
-    }
-
-    InviteDoc {
-        string invite_id PK
-        string tenant_id FK
-        string token UK
         string status
     }
 
-    AuthEventDoc {
+    RoleDocument {
+        string role_id PK
+        string code UK
+        string[] permissions
+    }
+
+    AuthEventDocument {
         string event_id PK
         string event_type
-        string tenant_id FK "nullable"
+        string user_id FK "nullable"
+    }
+
+    OutboxDocument {
+        string record_id PK
+        string event_type
+        bool published
     }
 ```
 
@@ -73,12 +58,18 @@ erDiagram
 
 | From | To | Link | Notes |
 |------|----|------|-------|
-| `MembershipDoc` | `TenantDoc` | `tenant_id` | One user may belong to multiple tenants via separate memberships |
-| `MembershipDoc` | `UserDoc` | `user_id` | Composite index on `(tenant_id, user_id)` |
-| `MembershipDoc` | `RoleDoc` | `role_ids[]` | Phase 3 RBAC; legacy `role` enum resolved to role IDs at runtime |
-| `RoleDoc` | `PermissionDoc` | `permissions[]` | Permission codes stored on roles; catalog is optional registry |
-| `InviteDoc` | `TenantDoc` | `tenant_id` | Self-serve tenant onboarding |
-| `AuthEventDoc` | `TenantDoc` / `UserDoc` | `tenant_id`, `user_id`, `actor_user_id` | Audit trail for auth and tenant lifecycle |
+| `UserDocument` | `RoleDocument` | `role_code` at create time | Admin create copies `RoleDocument.permissions` onto the user row; no FK stored on user |
+| `UserDocument` | `AuthEventDocument` | `user_id`, `actor_user_id` | Auth audit trail |
+| `OutboxDocument` | domain events | `event_type`, `payload` | Transactional outbox for Redis Stream relay |
+| `TenantDocument` | deployment | `tenant_id = TENANT_INSTANCE_ID` | One company profile row per deployment; not multi-tenant membership |
+
+**Removed collections (legacy multi-tenant schema)**
+
+| Collection | Replaced by |
+|------------|-------------|
+| `memberships` | Permissions stored directly on `users.permissions` |
+| `invites` | Admin-create flow (`POST /api/users`) |
+| `permissions` | Permission codes defined in `src/shared/permissions.py`; optional catalog no longer persisted |
 
 ---
 
@@ -86,59 +77,72 @@ erDiagram
 
 ### `MobileInfo` (embedded)
 
-Used on `UserDoc.phone`.
+Used on `UserDocument.phone`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `country_code` | `string` | yes | Country calling code (e.g. `852`) |
+| `country_code` | `string` | yes | Country calling code without `+` (e.g. `852`) |
 | `phone_number` | `string` | yes | Local subscriber number |
+
+Domain `Phone.mobile()` returns E.164 (e.g. `+85291234567`).
 
 ### `UserRole` (enum)
 
-Legacy role label retained on `UserDoc` and `MembershipDoc` for JWT claim `role` and early clients.
+API/JWT role label inferred from permission markers at login — **not stored** on `UserDocument`.
+
+| Value | Inferred when |
+|-------|---------------|
+| `admin` | User has `identity.tenant.admin` or `identity.user.admin` |
+| `operations` | Otherwise |
+
+### `UserStatus` (enum)
+
+Stored on `UserDocument.status`.
 
 | Value | Description |
 |-------|-------------|
-| `admin` | Full platform permissions |
-| `operations` | Standard operational permissions |
+| `active` | Can authenticate |
+| `suspended` | Account suspended |
+| `deactivated` | Account deactivated |
 
 ### Datetime convention
 
-All `created_at`, `suspended_at`, `expires_at`, and `accepted_at` fields use `HongKongDatetime` — normalized to `Asia/Hong_Kong` wall time. Naive datetimes from MongoDB BSON are treated as UTC components.
+All `created_at`, `updated_at`, `suspended_at`, `lockout_until`, and `last_login_at` fields use `HongKongDatetime` — normalized to `Asia/Hong_Kong` wall time. Naive datetimes from MongoDB BSON are treated as UTC components.
 
 ### ID generation
 
-Primary business IDs (`tenant_id`, `user_id`, `membership_id`, etc.) are UUID v7 strings via `new_id()`, providing time-sortable identifiers.
+Primary business IDs (`tenant_id`, `user_id`, `role_id`, etc.) are UUID v7 strings via `new_id()`, providing time-sortable identifiers.
 
 ---
 
 ## Collections
 
-### `tenants` — `TenantDoc`
+### `tenants` — `TenantDocument`
 
-Basic tenant metadata owned by Identity. Business entities (Customer, Asset, Booking, etc.) live in the Tracking service.
+Single **company profile** for this deployment. Not a multi-tenant registry — there is at most one meaningful row keyed by `TENANT_INSTANCE_ID`.
 
 | Field | Type | Default | Indexed | Description |
 |-------|------|---------|---------|-------------|
 | `_id` | `ObjectId` | auto | PK | MongoDB document ID (Beanie internal) |
-| `tenant_id` | `string` | UUID v7 | unique | Platform tenant identifier |
-| `name` | `string` | — | — | Display name |
-| `slug` | `string` | — | unique | URL-safe tenant slug |
-| `plan` | `string` | `"enterprise"` | yes | Subscription plan (`starter`, `professional`, `enterprise`) |
-| `status` | `string` | `"active"` | yes | Lifecycle: `active` \| `suspended` \| `pending` |
-| `features` | `string[]` | `[]` | — | Entitlement feature flags (derived from plan) |
+| `tenant_id` | `string` | UUID v7 | unique | Deployment company ID (`TENANT_INSTANCE_ID`) |
+| `name` | `string` | — | — | Company display name |
+| `slug` | `string` | — | unique | URL-safe slug |
+| `status` | `string` | `"active"` | yes | Lifecycle: `active` \| `suspended` |
+| `features` | `string[]` | `[]` | — | Entitlement feature flags for this deployment |
 | `is_active` | `bool` | `true` | yes | Soft-enable flag |
-| `perm_ver` | `int` | `1` | — | Bumped when any membership/role permission changes in this tenant |
 | `created_at` | `datetime` | now (HK) | — | Creation timestamp |
-| `suspended_at` | `datetime \| null` | `null` | — | When tenant was suspended |
+| `updated_at` | `datetime \| null` | `null` | — | Last profile update |
+| `suspended_at` | `datetime \| null` | `null` | — | When company was suspended |
 
-**Indexes:** `(is_active)`, `(status)`, `(plan)`, plus unique on `tenant_id` and `slug`.
+**Indexes:** `(is_active)`, `(status)`, plus unique on `tenant_id` and `slug`.
+
+**API:** `GET /api/company`, `PATCH /api/company`
 
 ---
 
-### `users` — `UserDoc`
+### `users` — `UserDocument`
 
-Global user accounts. Credentials and profile data are owned exclusively by Identity.
+Global user accounts for this deployment. Credentials, profile, and **permission snapshot** are owned by Identity.
 
 | Field | Type | Default | Indexed | Description |
 |-------|------|---------|---------|-------------|
@@ -148,133 +152,104 @@ Global user accounts. Credentials and profile data are owned exclusively by Iden
 | `email` | `string` | — | unique | Email address |
 | `full_name` | `string` | — | — | Display name |
 | `phone` | `MobileInfo \| null` | `null` | — | Optional mobile contact |
+| `position` | `string` | `""` | — | Job title / position |
 | `password_hash` | `string` | — | — | Hashed password (never exposed via API) |
+| `must_change_password` | `bool` | `false` | — | Force password change on next login (admin-created users) |
 | `is_outsourced` | `bool` | `false` | — | Outsourced worker flag |
-| `is_active` | `bool` | `true` | — | Account enabled |
+| `permissions` | `string[]` | `[]` | — | Denormalised permission snapshot (copied from role at create/update) |
+| `status` | `string` | `"active"` | yes | `active` \| `suspended` \| `deactivated` |
+| `failed_login_count` | `int` | `0` | — | Consecutive failed login attempts |
+| `lockout_until` | `datetime \| null` | `null` | — | Temporary lockout expiry |
+| `last_login_at` | `datetime \| null` | `null` | — | Last successful login |
 | `created_at` | `datetime` | now (HK) | — | Creation timestamp |
+| `updated_at` | `datetime \| null` | `null` | — | Last update |
 
-**Indexes:** unique on `user_id`, `username`, and `email`.
+**Indexes:** unique on `user_id`, `username`, and `email`; `(status)`.
 
-> **Note:** User role is stored on `MembershipDoc`, not `UserDoc`. JWT `role` claim is resolved from membership at login.
+**Permission resolution:** At user create or role update, permissions are copied from `RoleDocument` by `role_code`. JWT `role` is inferred from permission markers at token issuance; JWT `scopes` carries up to 32 permission codes.
+
+**User provisioning flows**
+
+| Flow | Endpoint | Notes |
+|------|----------|-------|
+| Bootstrap admin | `POST /api/auth/register` | Allowed only when `users` collection is empty |
+| Admin create | `POST /api/users` | Admin sets initial password; `must_change_password=true` |
+| Password change | `POST /api/auth/change-password` | Clears `must_change_password` |
 
 ---
 
-### `memberships` — `MembershipDoc`
+### `roles` — `RoleDocument`
 
-Links a user to a tenant with role assignments and a permission snapshot version.
-
-| Field | Type | Default | Indexed | Description |
-|-------|------|---------|---------|-------------|
-| `_id` | `ObjectId` | auto | PK | MongoDB document ID |
-| `membership_id` | `string` | UUID v7 | unique | Membership identifier |
-| `tenant_id` | `string` | — | yes | FK → `tenants.tenant_id` |
-| `user_id` | `string` | — | yes | FK → `users.user_id` |
-| `role` | `UserRole` | — | yes | Legacy enum claim (JWT `ver:1` / early clients) |
-| `role_ids` | `string[]` | `[]` | — | FK → `roles.role_id` (Phase 3 RBAC) |
-| `perm_ver` | `int` | `1` | — | Per-membership permission snapshot version (mirrored on JWT) |
-| `is_active` | `bool` | `true` | yes | Membership enabled |
-| `created_at` | `datetime` | now (HK) | — | Creation timestamp |
-
-**Indexes:** `(tenant_id, user_id)`, `(role)`, `(is_active)`, plus unique on `membership_id`.
-
-**Permission resolution:** If `role_ids` is empty, the service resolves from legacy `role` via tenant-scoped `RoleDoc` templates (`admin` / `operations`) and backfills `role_ids`.
-
----
-
-### `roles` — `RoleDoc`
-
-RBAC role definitions. Platform templates (`tenant_id = null`) are copied per tenant on first use.
+Global RBAC role templates for this deployment. Seeded at startup from `PLATFORM_ROLE_TEMPLATES` in `src/shared/permissions.py`.
 
 | Field | Type | Default | Indexed | Description |
 |-------|------|---------|---------|-------------|
 | `_id` | `ObjectId` | auto | PK | MongoDB document ID |
 | `role_id` | `string` | UUID v7 | unique | Role identifier |
-| `tenant_id` | `string \| null` | `null` | yes | `null` = platform template; set for per-tenant roles |
-| `code` | `string` | — | yes | Role code (e.g. `admin`, `operations`) |
+| `code` | `string` | — | unique | Role code (e.g. `admin`, `operations`) |
 | `name` | `string` | — | — | Human-readable name |
 | `permissions` | `string[]` | `[]` | — | Permission codes granted by this role |
 | `is_system` | `bool` | `true` | yes | System-managed role (not user-editable) |
 | `created_at` | `datetime` | now (HK) | — | Creation timestamp |
+| `updated_at` | `datetime \| null` | `null` | — | Last template sync |
 
-**Indexes:** `(tenant_id, code)`, `(is_system)`, plus unique on `role_id`.
+**Indexes:** unique on `role_id` and `code`; `(is_system)`.
 
-**Platform templates**
+**System templates**
 
 | `code` | Permissions |
 |--------|-------------|
 | `admin` | All permissions in catalog |
 | `operations` | Operational subset (see [Permission catalog](#permission-catalog)) |
 
----
-
-### `permissions` — `PermissionDoc`
-
-Optional permission registry. Codes are also stored directly on `RoleDoc.permissions`; the catalog is seeded from `src/shared/permissions.py`.
-
-| Field | Type | Default | Indexed | Description |
-|-------|------|---------|---------|-------------|
-| `_id` | `ObjectId` | auto | PK | MongoDB document ID |
-| `permission_id` | `string` | UUID v7 | unique | Permission identifier |
-| `code` | `string` | — | unique | Dot-separated capability code (e.g. `identity.user.admin`) |
-| `description` | `string` | `""` | — | Human-readable description |
-| `created_at` | `datetime` | now (HK) | — | Creation timestamp |
-
-**Indexes:** unique on `permission_id` and `code`.
+> **Migration note:** Legacy multi-tenant rows stored one role per tenant with the same `code`. Startup runs `reconcile_stale_indexes()` in `infrastructure/migrations.py` to drop stale indexes, dedupe by `code`, and allow the global unique index on `code`.
 
 ---
 
-### `invites` — `InviteDoc`
+### `auth_events` — `AuthEventDocument`
 
-Tenant invitations for self-serve membership onboarding.
-
-| Field | Type | Default | Indexed | Description |
-|-------|------|---------|---------|-------------|
-| `_id` | `ObjectId` | auto | PK | MongoDB document ID |
-| `invite_id` | `string` | UUID v7 | unique | Invite identifier |
-| `tenant_id` | `string` | — | yes | FK → `tenants.tenant_id` |
-| `email` | `string` | — | yes | Invitee email |
-| `role_code` | `string` | `"operations"` | — | Role to assign on acceptance |
-| `token` | `string` | UUID v7 | unique | Single-use acceptance token |
-| `status` | `string` | `"pending"` | yes | `pending` \| `accepted` \| `revoked` \| `expired` |
-| `invited_by_user_id` | `string \| null` | `null` | — | FK → `users.user_id` (inviter) |
-| `expires_at` | `datetime` | — | — | Token expiry |
-| `accepted_at` | `datetime \| null` | `null` | — | When invite was accepted |
-| `created_at` | `datetime` | now (HK) | — | Creation timestamp |
-
-**Indexes:** `(tenant_id, email)`, `(status)`, plus unique on `invite_id` and `token`.
-
----
-
-### `auth_events` — `AuthEventDoc`
-
-Auth and RBAC audit log. Tenant-scoped reads via `GET /api/auth/events`.
+Auth audit log. Not tenant-scoped — single deployment context.
 
 | Field | Type | Default | Indexed | Description |
 |-------|------|---------|---------|-------------|
 | `_id` | `ObjectId` | auto | PK | MongoDB document ID |
 | `event_id` | `string` | UUID v7 | unique | Event identifier |
 | `event_type` | `string` | — | yes | Event category (see below) |
-| `tenant_id` | `string \| null` | `null` | yes | FK → `tenants.tenant_id` |
 | `user_id` | `string \| null` | `null` | yes | Subject user |
 | `actor_user_id` | `string \| null` | `null` | — | Acting user (admin actions) |
 | `detail` | `object` | `{}` | — | Arbitrary event payload |
 | `created_at` | `datetime` | now (HK) | — | Event timestamp |
 
-**Indexes:** `(tenant_id, created_at DESC)`, `(event_type, created_at DESC)`, plus unique on `event_id`.
+**Indexes:** `(event_type, created_at DESC)`, plus unique on `event_id`.
 
 **Known `event_type` values**
 
 | Event | Description |
 |-------|-------------|
-| `user.registered` | New user account created |
-| `tenant.registered` | Self-serve tenant signup |
+| `user.registered` | Bootstrap admin account created |
 | `auth.login` | Successful login |
 | `auth.login_failed` | Failed login attempt |
-| `invite.created` | Tenant invite issued |
-| `invite.accepted` | Invite redeemed |
-| `tenant.suspended` | Tenant suspended by admin |
-| `tenant.activated` | Tenant re-activated |
-| `billing.webhook` | Billing/entitlements webhook received |
+| `auth.password_changed` | User changed password |
+
+**API:** `GET /api/auth/events` (requires `identity.audit.read`)
+
+---
+
+### `outbox` — `OutboxDocument`
+
+Transactional outbox for domain events. Relay worker publishes to Redis Streams when `EVENT_TRANSPORT=redis_streams`.
+
+| Field | Type | Default | Indexed | Description |
+|-------|------|---------|---------|-------------|
+| `_id` | `ObjectId` | auto | PK | MongoDB document ID |
+| `record_id` | `string` | — | unique | Outbox record identifier |
+| `event_type` | `string` | — | — | Domain event class name (e.g. `UserRegistered`) |
+| `payload` | `object` | `{}` | — | Serialised `DomainEvent.to_dict()` |
+| `published` | `bool` | `false` | yes | Relay completion flag |
+| `created_at` | `datetime` | now (HK) | — | Enqueue timestamp |
+| `published_at` | `datetime \| null` | `null` | — | When relay marked published |
+
+**Indexes:** `(published, created_at)`.
 
 ---
 
@@ -286,10 +261,10 @@ Permission codes use capability prefixes: `identity.*`, `tracking.*`, `product.*
 
 | Code | Description |
 |------|-------------|
-| `identity.tenant.admin` | Tenant administration |
+| `identity.tenant.admin` | Company profile administration |
 | `identity.user.admin` | User CRUD |
 | `identity.user.read` | User directory read |
-| `identity.invite.manage` | Invite management |
+| `identity.invite.manage` | Legacy code; invite flow removed |
 | `identity.audit.read` | Auth audit log read |
 
 ### Tracking permissions (granted via roles, enforced in Tracking service)
@@ -313,23 +288,21 @@ Permission codes use capability prefixes: `identity.*`, `tracking.*`, `product.*
 | `tracking.snapshot.write` | Snapshots |
 | `tracking.alert.read` / `tracking.alert.write` | Alerts |
 
-### Plan → feature entitlements
+### Bootstrap feature entitlements
 
-| Plan | Features |
-|------|----------|
-| `starter` | `tracking.core` |
-| `professional` | `tracking.core`, `tracking.scan`, `tracking.documents` |
-| `enterprise` | Above + `tracking.alerts`, `product.intel`, `tender.intel` |
+Default company `features` are seeded from `PLAN_FEATURES["enterprise"]` at first startup. Features are stored on `TenantDocument.features` and editable via `PATCH /api/company`. There is no persisted `plan` field.
 
 ---
 
-## Permission Versioning (`perm_ver`)
+## Permission Snapshots
 
-When role permissions change for a tenant, `TenantDoc.perm_ver` is incremented and all `MembershipDoc.perm_ver` values for that tenant are updated. JWT access tokens carry `perm_ver` so downstream services can invalidate cached permission snapshots without re-querying Identity on every request.
+Permissions are **denormalised on the user row** at create/update time. There is no `perm_ver` versioning or membership snapshot in the single-tenant schema.
 
 ```
-TenantDoc.perm_ver  ──bump──▶  MembershipDoc.perm_ver  ──mirror──▶  JWT claim perm_ver
+RoleDocument.permissions  ──copy at create/update──▶  UserDocument.permissions  ──mirror──▶  JWT scopes (capped)
 ```
+
+When an admin changes a user's `role_code`, the handler reloads the role template and rewrites `UserDocument.permissions`. Downstream services should treat JWT permission claims as authoritative until the token expires, or re-fetch via `GET /api/auth/me/permissions`.
 
 ---
 
@@ -343,6 +316,7 @@ TenantDoc.perm_ver  ──bump──▶  MembershipDoc.perm_ver  ──mirror─
 | Enums & embeds | `backend/src/domain/enums.py`, `infrastructure/persistence/mongo/embeds.py` |
 | Permission catalog | `backend/src/shared/permissions.py` |
 | RBAC resolution | `backend/src/application/services/authorization_service.py` |
+| Index migration | `backend/src/infrastructure/migrations.py` |
 | Database init | `backend/src/infrastructure/database.py` |
 | JWT contract | `docs/architecture/IDENTITY_CONTRACT.md` |
 | Event contract | `docs/architecture/EVENT_CONTRACT.md` |

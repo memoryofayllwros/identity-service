@@ -6,11 +6,10 @@ from typing import Any
 
 class UnitOfWork(ABC):
     """
-    Coordinates persistence of multiple aggregates and event dispatch.
+    Coordinates persistence of aggregates and event dispatch.
 
     Usage:
         async with uow:
-            uow.register(tenant)
             uow.register(user)
             await uow.commit()
     """
@@ -23,9 +22,9 @@ class UnitOfWork(ABC):
     @abstractmethod
     async def commit(self) -> None:
         """
-        1. Persist all registered aggregates in a single session/transaction.
+        1. Persist all registered aggregates.
         2. Drain domain events from each aggregate.
-        3. Write OutboxRecords for each event (same session).
+        3. Write OutboxRecords for each event.
         """
         ...
 

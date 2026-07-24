@@ -44,12 +44,12 @@ We have four layers. Domain holds entities, value objects, business rules, and r
 
 **中文（~60s）：**  
 为什么说我们 **满足** purity？有三点可以直接验证。  
-第一，Domain 是纯业务——比如 `Tenant.suspend()` 只改状态、抛 domain exception、用 `_record()` 记事件，没有 FastAPI、没有 Beanie。  
+第一，Domain 是纯业务——比如 `User.deactivate()` 只改状态、用 `_record()` 记事件，没有 FastAPI、没有 Beanie。  
 第二，Port 在内、Adapter 在外——`UserRepository` 在 domain，`MongoUserRepository` 在 infrastructure；`TokenService` port 在 application，JWT 实现在 infrastructure。  
 第三，Application 不 import infrastructure——`test_phase1_boundaries.py` 自动化检查，application 里不能出现 fastapi、beanie、infrastructure、src.shared。
 
 **English (~60s):**  
-Why do we say we meet purity? Three verifiable points. First, Domain is pure business—e.g. `Tenant.suspend()` only changes state, raises domain exceptions, and records events via `_record()`—no FastAPI, no Beanie. Second, ports inside, adapters outside—`UserRepository` in domain, `MongoUserRepository` in infrastructure; `TokenService` port in application, JWT impl in infrastructure. Third, Application never imports infrastructure—`test_phase1_boundaries.py` enforces no fastapi, beanie, infrastructure, or src.shared in the application layer.
+Why do we say we meet purity? Three verifiable points. First, Domain is pure business—e.g. `User.deactivate()` only changes state and records events via `_record()`—no FastAPI, no Beanie. Second, ports inside, adapters outside—`UserRepository` in domain, `MongoUserRepository` in infrastructure; `TokenService` port in application, JWT impl in infrastructure. Third, Application never imports infrastructure—`test_phase1_boundaries.py` enforces no fastapi, beanie, infrastructure, or src.shared in the application layer.
 
 ---
 

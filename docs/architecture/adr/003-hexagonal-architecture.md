@@ -6,17 +6,17 @@ Accepted
 
 ## Context
 
-After ADR-002 extracted Identity into `pacific-identity-platform`, the codebase used a **Service + Beanie ODM** pattern: API routes and service functions operated directly on `UserDoc`, `TenantDoc`, and related Mongo documents. This blurred persistence models with domain logic and made RBAC, invites, and tenant lifecycle hard to test in isolation.
+After ADR-002 extracted Identity into `pacific-identity-platform`, the codebase used a **Service + Beanie ODM** pattern: API routes and service functions operated directly on Mongo documents. This blurred persistence models with domain logic and made RBAC and user lifecycle hard to test in isolation.
 
 ## Decision
 
 Adopt **Hexagonal Architecture (Ports & Adapters)** with three layers:
 
 1. **Domain** (`backend/src/domain/`) — entities, value objects, domain events, repository interfaces. No Beanie, FastAPI, or Redis imports.
-2. **Application** (`backend/src/application/`) — command/query handlers and orchestration services (`AuthorizationService`, `MembershipService`, `AuthApplicationService`).
+2. **Application** (`backend/src/application/`) — command/query handlers and orchestration services (`AuthorizationService`, `AuthApplicationService`, `CreateUserHandler`).
 3. **Infrastructure** (`backend/src/infrastructure/`) — Mongo persistence (documents, mappers, repositories), JWT/security adapters (`infrastructure/security/`), Redis Streams event publisher, FastAPI DI factories.
 
-API routes remain thin adapters that delegate to application handlers. The HTTP/JWT contract in `IDENTITY_CONTRACT.md` is unchanged.
+API routes remain thin adapters that delegate to application handlers. See `IDENTITY_CONTRACT.md` and `DATA_SCHEMA.md` for the current single-tenant contract.
 
 ### Persistence
 
@@ -29,9 +29,16 @@ API routes remain thin adapters that delegate to application handlers. The HTTP/
 - `EventPublisher` port in `domain/events/publisher.py` with `InProcessEventPublisher` (default) and `RedisStreamsPublisher` (production via `EVENT_TRANSPORT=redis_streams`).
 - Composite publisher fan-out to in-process handlers and Redis Streams.
 
+### Single-tenant schema (2026)
+
+- Removed `memberships`, `invites`, and `permissions` collections.
+- Permissions denormalised on `UserDocument.permissions`; `RoleDocument` provides global templates keyed by unique `code`.
+- `TenantDocument` stores one company profile per deployment (`TENANT_INSTANCE_ID`).
+- Admin-create flow replaces invite acceptance (`CreateUserHandler` + `ChangePasswordHandler`).
+- Startup migration `reconcile_stale_indexes()` reconciles legacy multi-tenant Mongo indexes and role rows.
+
 ### Legacy cleanup
 
-- Removed `UserDoc.role`; role lives on `MembershipDoc` only.
 - Deleted `services/auth_service.py`, `rbac_service.py`, `audit_service.py`.
 - Deleted `backend/src/models/` compatibility shim directory; all imports now resolve to `domain.*` or `infrastructure.persistence.mongo.*`.
 

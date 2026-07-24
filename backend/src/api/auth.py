@@ -7,12 +7,15 @@ from pydantic import BaseModel, Field
 from src.application.queries.user_queries import GetMyPermissionsQuery, GetUserQuery, ListUsersQuery
 from src.infrastructure.dependencies import (
     get_auth_application_service,
+    get_change_password_handler,
     get_get_user_handler,
     get_list_users_handler,
     get_my_permissions_handler,
     get_user_repository,
 )
+from src.application.commands.change_password import ChangePasswordCommand
 from src.schemas.auth import (
+    ChangePasswordRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
@@ -23,7 +26,7 @@ from src.schemas.auth import (
     UserResponse,
 )
 from src.infrastructure.security.dependencies import get_current_principal, require_roles
-from src.domain.enums import UserRole
+from src.domain.enums import UserRole, UserStatus
 from src.infrastructure.security.principal import Principal
 from src.infrastructure.security.rate_limit import enforce_rate_limit
 
@@ -99,6 +102,23 @@ async def refresh(payload: RefreshRequest) -> LoginResponse:
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 async def forgot_password(payload: ForgotPasswordRequest) -> ForgotPasswordResponse:
     return await get_auth_application_service().request_password_reset(payload)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: ChangePasswordRequest,
+    principal: Principal = Depends(get_current_principal),
+) -> None:
+    user = await get_user_repository().find_by_id(principal.user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
+    await get_change_password_handler().execute(
+        ChangePasswordCommand(
+            user_id=user.id,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    )
 
 
 @router.get("/me", response_model=UserResponse)

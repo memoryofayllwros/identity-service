@@ -84,7 +84,7 @@ flowchart TB
 | **Domain** | `domain/` | Entities, rules, events, repository interfaces | Import FastAPI / Beanie / Mongo |
 | **Application** | `application/` | Command/Query handlers, orchestration | Touch DB or JWT implementations |
 | **Infrastructure** | `infrastructure/` | Mongo repos, JWT, outbox, Redis | Business rules |
-| **API** | `api/` + `main.py` | HTTP parsing, exception → status mapping | `tenant.suspend()` logic |
+| **API** | `api/` + `main.py` | HTTP parsing, exception → status mapping | `User.deactivate()` logic |
 
 **Visual:** Layer pyramid + directory tree snapshot
 
@@ -94,13 +94,13 @@ README phrase **"Dependencies always point inward"** refers to this model.
 
 ### Slide 5 — Five Verifiable Proofs (1/2)
 
-**① Domain is framework-free** — `Tenant.suspend()` only mutates state and `_record(event)`
+**① Domain is framework-free** — `User.deactivate()` only mutates state and `_record(event)`
 
 **② Ports inside, adapters outside** — `UserRepository`, `TokenService`, `EventPublisher`
 
 **③ Application does not import infrastructure** — enforced by `test_phase1_boundaries.py`
 
-**Visual:** Code snippets — `tenant.suspend`, repository port, boundary test
+**Visual:** Code snippets — `User.deactivate`, repository port, boundary test
 
 ---
 
@@ -211,16 +211,13 @@ See [EVENT_CONTRACT.md](EVENT_CONTRACT.md) for full catalog.
 
 ## Appendix — Code References for Slides
 
-### Domain purity — `Tenant.suspend()`
+### Domain purity — `User.deactivate()`
 
-```53:59:backend/src/domain/entities/tenant.py
-    def suspend(self, reason: str | None = None) -> None:
-        if self.status == TenantStatus.SUSPENDED:
-            raise TenantAlreadySuspended()
-        self.status = TenantStatus.SUSPENDED
-        self.is_active = False
-        self.suspended_at = now_hk()
-        self._record(TenantSuspended(tenant_id=self.id, reason=reason))
+```74:77:backend/src/domain/entities/user.py
+    def deactivate(self) -> None:
+        self.status = UserStatus.DEACTIVATED
+        self.updated_at = now_hk()
+        self._record(UserDeactivated(user_id=self.id))
 ```
 
 ### Boundary translation — `main.py`
@@ -235,18 +232,11 @@ async def domain_error_handler(_request: Request, exc: DomainError) -> JSONRespo
     )
 ```
 
-### UoW + outbox — `accept_invite.py`
+### UoW + outbox — `create_user.py`
 
-```97:106:backend/src/application/commands/accept_invite.py
-        async with self._uow:
-            self._uow.register(user)
-            self._uow.register(invite)
-            await self._membership_service.ensure_membership(
-                tenant_id=tenant.id,
-                user_id=user.id,
-                role=role,
-                uow=self._uow,
-            )
-            await self._uow.commit()
+```63:65:backend/src/application/commands/create_user.py
+        async with self.uow:
+            self.uow.register(user)
+            await self.uow.commit()
 ```
 

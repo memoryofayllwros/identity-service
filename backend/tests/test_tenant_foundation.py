@@ -1,11 +1,10 @@
-"""Smoke tests for Phase 1 tenant foundation."""
+"""Smoke tests for deployment tenant context and JWT claims."""
 
 import unittest
 
 from jose import jwt
 
-from src.domain.events import UserAddedToTenant
-from src.domain.events.user_registered import UserInvited
+from src.domain.events import UserRegistered
 from src.infrastructure.dependencies import get_in_process_publisher
 from src.infrastructure.security.security import create_access_token
 from src.shared.constants import DEFAULT_TENANT_ID
@@ -44,13 +43,13 @@ class TenantContextTests(unittest.TestCase):
 class DomainEventTests(unittest.IsolatedAsyncioTestCase):
     async def test_dispatcher_invokes_subscriber(self) -> None:
         dispatcher = get_in_process_publisher()
-        seen: list[UserInvited] = []
+        seen: list[UserRegistered] = []
 
-        async def handler(event: UserInvited) -> None:
+        async def handler(event: UserRegistered) -> None:
             seen.append(event)
 
-        dispatcher.subscribe(UserInvited, handler)
-        await dispatcher.publish(UserAddedToTenant(tenant_id="t1", user_id="u1", role="admin"))
+        dispatcher.subscribe(UserRegistered, handler)
+        await dispatcher.publish(UserRegistered(user_id="u1", mobile="+85291234567"))
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0].user_id, "u1")
 

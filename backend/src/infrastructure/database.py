@@ -5,6 +5,7 @@ from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
 from src.infrastructure.settings import get_settings
+from src.infrastructure.migrations import reconcile_stale_indexes
 from src.infrastructure.persistence.mongo.documents import IDENTITY_DOCUMENT_MODELS
 
 _client: Optional[AsyncMongoClient] = None
@@ -31,7 +32,11 @@ async def init_database(
 
     _client = AsyncMongoClient(uri)
     database = _client[db_name]
-    await init_beanie(database=database, document_models=IDENTITY_DOCUMENT_MODELS)
+    await reconcile_stale_indexes(database)
+    await init_beanie(
+        database=database,
+        document_models=IDENTITY_DOCUMENT_MODELS,
+    )
     return database
 
 

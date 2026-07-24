@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from src.application.dto import (
+    ChangePasswordDTO,
     ForgotPasswordDTO,
     ForgotPasswordResultDTO,
     LoginDTO,
@@ -12,7 +13,8 @@ from src.application.dto import (
     ProfileUpdateDTO,
     RegisterDTO,
     UserDTO,
-    mobile_digits_from_pair,
+    mobile_from_pair,
+    normalize_mobile_identifier,
 )
 
 # HTTP-layer aliases — routers and OpenAPI keep transport-oriented names.
@@ -23,6 +25,7 @@ LoginRequest = LoginDTO
 ProfileUpdate = ProfileUpdateDTO
 ForgotPasswordRequest = ForgotPasswordDTO
 ForgotPasswordResponse = ForgotPasswordResultDTO
+ChangePasswordRequest = ChangePasswordDTO
 
 
 class LoginResponse(BaseModel):
@@ -40,6 +43,8 @@ class OAuth2TokenResponse(BaseModel):
 
 
 __all__ = [
+    "ChangePasswordDTO",
+    "ChangePasswordRequest",
     "ForgotPasswordDTO",
     "ForgotPasswordRequest",
     "ForgotPasswordResponse",
@@ -56,5 +61,6 @@ __all__ = [
     "RegisterRequest",
     "UserDTO",
     "UserResponse",
-    "mobile_digits_from_pair",
+    "mobile_from_pair",
+    "normalize_mobile_identifier",
 ]

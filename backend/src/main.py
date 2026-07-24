@@ -16,20 +16,13 @@ from src.api.identity_routers import IDENTITY_ROUTERS, jwks_router
 from src.domain.exceptions import (
     DomainError,
     DuplicateEmail,
-    DuplicateTenantSlug,
     DuplicateUsername,
     Forbidden,
     InvalidCredentials,
     InvalidRoleCode,
     InvalidToken,
-    InviteExpired,
-    InviteNotFound,
-    InviteNotPending,
-    MembershipInactive,
     RegistrationClosed,
-    TenantAlreadySuspended,
     TenantNotFound,
-    TenantNotSuspended,
     TenantSuspended,
     UserInactive,
     UserNotFound,
@@ -39,7 +32,7 @@ from src.infrastructure.database import close_database, init_database
 from src.infrastructure.dependencies import (
     build_event_publisher,
     ensure_default_tenant,
-    ensure_platform_role_templates,
+    ensure_system_roles,
     get_outbox_relay_worker,
     reset_event_publisher,
 )
@@ -56,7 +49,7 @@ async def lifespan(_app: FastAPI):
     bootstrap_tenant_context()
     await init_database()
     build_event_publisher()
-    await ensure_platform_role_templates()
+    await ensure_system_roles()
     await ensure_default_tenant()
     relay = get_outbox_relay_worker()
     relay_task = asyncio.create_task(relay.start())
@@ -71,7 +64,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="Pacific Identity Platform API",
+    title="Identity Service API",
     version="0.3.0",
     lifespan=lifespan,
 )
@@ -88,20 +81,13 @@ app.include_router(jwks_router, prefix="/api")
 _DOMAIN_STATUS: dict[type[DomainError], int] = {
     DuplicateEmail: status.HTTP_409_CONFLICT,
     DuplicateUsername: status.HTTP_409_CONFLICT,
-    DuplicateTenantSlug: status.HTTP_409_CONFLICT,
-    InviteExpired: status.HTTP_410_GONE,
-    InviteNotFound: status.HTTP_404_NOT_FOUND,
-    InviteNotPending: status.HTTP_404_NOT_FOUND,
     RegistrationClosed: status.HTTP_403_FORBIDDEN,
-    TenantAlreadySuspended: status.HTTP_409_CONFLICT,
     TenantNotFound: status.HTTP_404_NOT_FOUND,
-    TenantNotSuspended: status.HTTP_409_CONFLICT,
     TenantSuspended: status.HTTP_403_FORBIDDEN,
     UserInactive: status.HTTP_401_UNAUTHORIZED,
     UserNotFound: status.HTTP_404_NOT_FOUND,
     InvalidCredentials: status.HTTP_401_UNAUTHORIZED,
     InvalidToken: status.HTTP_401_UNAUTHORIZED,
-    MembershipInactive: status.HTTP_401_UNAUTHORIZED,
     Forbidden: status.HTTP_403_FORBIDDEN,
     InvalidRoleCode: status.HTTP_400_BAD_REQUEST,
 }

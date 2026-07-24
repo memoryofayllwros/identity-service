@@ -62,13 +62,22 @@ class IdentityBoundaryTests(unittest.TestCase):
             "UserDocument",
             "TenantDocument",
             "RoleDocument",
-            "PermissionDocument",
-            "InviteDocument",
+            "AuthEventDocument",
+            "OutboxDocument",
         ):
             self.assertIn(required, names)
 
+    def test_identity_models_exclude_multi_tenant(self) -> None:
+        names = {model.__name__ for model in IDENTITY_DOCUMENT_MODELS}
+        for forbidden in (
+            "MembershipDocument",
+            "PermissionDocument",
+            "InviteDocument",
+        ):
+            self.assertNotIn(forbidden, names)
+
     def test_identity_models_count(self) -> None:
-        self.assertEqual(len(IDENTITY_DOCUMENT_MODELS), 8)
+        self.assertEqual(len(IDENTITY_DOCUMENT_MODELS), 5)
 
     def test_models_shim_directory_removed(self) -> None:
         self.assertFalse(
@@ -138,10 +147,16 @@ class IdentityBoundaryTests(unittest.TestCase):
                 msg=f"{path.relative_to(BACKEND_ROOT)} must not exist",
             )
 
-    def test_tenants_router_in_api(self) -> None:
-        self.assertTrue(
+    def test_tenants_router_removed(self) -> None:
+        self.assertFalse(
             (API_DIR / "tenants.py").exists(),
-            msg="tenant routes must live in api/tenants.py",
+            msg="multi-tenant invite routes must not expose api/tenants.py",
+        )
+
+    def test_company_router_present(self) -> None:
+        self.assertTrue(
+            (API_DIR / "company.py").exists(),
+            msg="single-tenant company profile must live in api/company.py",
         )
 
     def test_shared_kernel_version_present(self) -> None:
