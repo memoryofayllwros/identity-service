@@ -15,7 +15,6 @@ from src.infrastructure.dependencies import (
     ensure_default_tenant,
     get_accept_invite_handler,
     get_activate_tenant_handler,
-    get_auth_application_service,
     get_invite_repository,
     get_invite_user_handler,
     get_suspend_tenant_handler,

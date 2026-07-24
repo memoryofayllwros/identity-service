@@ -296,6 +296,7 @@ Further reading: [ADR-003: Hexagonal Architecture](docs/architecture/adr/003-hex
 
 | Document | Description |
 |----------|-------------|
+| [`CUSTOMIZATION.md`](docs/architecture/CUSTOMIZATION.md) | How to adapt the service for other projects (layer-by-layer) |
 | [`IDENTITY_CONTRACT.md`](docs/architecture/IDENTITY_CONTRACT.md) | JWT claims, endpoints, authorization model |
 | [`EVENT_CONTRACT.md`](docs/architecture/EVENT_CONTRACT.md) | Domain event payloads and transport |
 | [`DATA_SCHEMA.md`](docs/architecture/DATA_SCHEMA.md) | MongoDB collections and indexes |

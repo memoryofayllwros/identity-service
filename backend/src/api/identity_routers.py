@@ -31,7 +31,7 @@ from src.shared.tenant_context import current_tenant_id
 from src.api.auth import router as auth_router
 from src.api.health import router as health_router
 from src.api.identity_ops import router as identity_ops_router
-from src.modules.identity.api.tenants import router as tenants_router
+from src.api.tenants import router as tenants_router
 
 users_router = APIRouter(prefix="/users", tags=["users"])
 AdminDep = Annotated[Principal, Depends(require_permission(IDENTITY_USER_ADMIN))]

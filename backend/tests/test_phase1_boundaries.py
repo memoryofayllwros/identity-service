@@ -40,14 +40,7 @@ FORBIDDEN_APPLICATION_IMPORTS = (
     "infrastructure",
 )
 
-MODULES_IDENTITY_DIR = BACKEND_ROOT / "src" / "modules" / "identity"
-
-FORBIDDEN_SHIM_INIT_FILES = (
-    MODULES_IDENTITY_DIR / "models" / "__init__.py",
-    MODULES_IDENTITY_DIR / "schemas" / "__init__.py",
-    MODULES_IDENTITY_DIR / "security" / "__init__.py",
-    MODULES_IDENTITY_DIR / "services" / "__init__.py",
-)
+MODULES_DIR = BACKEND_ROOT / "src" / "modules"
 
 
 class IdentityBoundaryTests(unittest.TestCase):
@@ -114,13 +107,17 @@ class IdentityBoundaryTests(unittest.TestCase):
             msg="EventPublisher port must be in domain/events/",
         )
 
-    def test_identity_module_shims_removed(self) -> None:
-        for path in FORBIDDEN_SHIM_INIT_FILES:
-            self.assertFalse(
-                path.exists(),
-                msg=f"legacy shim {path.relative_to(BACKEND_ROOT)} must not exist; "
-                f"use canonical application/ or infrastructure/ paths",
-            )
+    def test_modules_directory_removed(self) -> None:
+        self.assertFalse(
+            MODULES_DIR.exists(),
+            msg="backend/src/modules/ must not exist; use api/ for HTTP adapters",
+        )
+
+    def test_tenants_router_in_api(self) -> None:
+        self.assertTrue(
+            (API_DIR / "tenants.py").exists(),
+            msg="tenant routes must live in api/tenants.py",
+        )
 
     def test_shared_kernel_version_present(self) -> None:
         from src.shared.permissions import SHARED_KERNEL_VERSION
