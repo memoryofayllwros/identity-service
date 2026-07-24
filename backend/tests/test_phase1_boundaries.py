@@ -32,6 +32,7 @@ FORBIDDEN_API_FILES = (
 FORBIDDEN_SCHEMA_FILES = ("ops.py",)
 
 APPLICATION_DIR = BACKEND_ROOT / "src" / "application"
+SHARED_DIR = BACKEND_ROOT / "src" / "shared"
 FORBIDDEN_APPLICATION_IMPORTS = (
     "fastapi",
     "beanie",
@@ -41,8 +42,10 @@ FORBIDDEN_APPLICATION_IMPORTS = (
 )
 
 LEGACY_DIRS = (
+    BACKEND_ROOT / "src" / "modules",
     BACKEND_ROOT / "src" / "seed",
     BACKEND_ROOT / "src" / "services",
+    SHARED_DIR / "events",
 )
 
 
@@ -102,6 +105,23 @@ class IdentityBoundaryTests(unittest.TestCase):
                     source,
                     msg=f"{py_file.relative_to(BACKEND_ROOT)} imports forbidden '{forbidden}'",
                 )
+
+    def test_shared_does_not_import_infrastructure(self) -> None:
+        forbidden_prefixes = (
+            "from src.infrastructure",
+            "import src.infrastructure",
+        )
+        for py_file in SHARED_DIR.rglob("*.py"):
+            for line in py_file.read_text().splitlines():
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                for prefix in forbidden_prefixes:
+                    self.assertNotIn(
+                        prefix,
+                        stripped,
+                        msg=f"{py_file.relative_to(BACKEND_ROOT)} must not import infrastructure",
+                    )
 
     def test_event_publisher_port_in_domain(self) -> None:
         publisher_path = BACKEND_ROOT / "src" / "domain" / "events" / "publisher.py"

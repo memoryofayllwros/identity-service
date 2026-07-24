@@ -10,13 +10,15 @@ from mongomock_motor import AsyncMongoMockClient
 
 from src.infrastructure.persistence.mongo.documents import IDENTITY_DOCUMENT_MODELS
 from src.shared.constants import DEFAULT_TENANT_ID
-from src.shared.tenant_context import bind_tenant_id, reset_tenant_id
+from src.shared.tenant_context import bind_tenant_id, configure_deployment_tenant_id, reset_tenant_id
 
 os.environ.setdefault("TENANT_INSTANCE_ID", DEFAULT_TENANT_ID)
 os.environ.setdefault("DEPLOYMENT_ID", "test-deployment")
 os.environ.setdefault("MONGODB_URI", "mongodb://localhost:27017")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("REFRESH_SECRET_KEY", "test-refresh-secret-key")
+
+configure_deployment_tenant_id(DEFAULT_TENANT_ID)
 
 
 @pytest.fixture(autouse=True)

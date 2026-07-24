@@ -130,9 +130,17 @@ cd backend
 poetry run pytest
 ```
 
-### Migrations and scripts
+### Ops scripts
 
-Utility scripts live in `backend/scripts/` (database migration, tenant export, backup). Run with Poetry from the `backend` directory.
+Utility scripts in `backend/scripts/`:
+
+```bash
+# Backup identity_db (requires mongodump)
+MONGODB_URI=mongodb://localhost:27017 ./scripts/backup_identity_db.sh
+
+# Export a tenant to JSON
+poetry run python scripts/export_identity_tenant.py --tenant-id <id> --output-dir ./export
+```
 
 ## Project structure
 

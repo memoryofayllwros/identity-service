@@ -34,6 +34,7 @@ from src.domain.exceptions import (
     UserInactive,
     UserNotFound,
 )
+from src.infrastructure.bootstrap import bootstrap_tenant_context
 from src.infrastructure.database import close_database, init_database
 from src.infrastructure.dependencies import (
     build_event_publisher,
@@ -52,6 +53,7 @@ async def lifespan(_app: FastAPI):
     reset_event_publisher()
     settings = get_settings()
     validate_deployment_tenant(settings)
+    bootstrap_tenant_context()
     await init_database()
     build_event_publisher()
     await ensure_platform_role_templates()
